@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{mutex::Mut, runtime::*, lexer};
+use crate::{lexer, runtime::*};
 
 pub fn dyn_dump(stack: &mut Stack) {
     Words {
@@ -179,11 +179,18 @@ pub fn dyn_all_types(stack: &mut Stack) {
 
 pub fn dyn_read(stack: &mut Stack) {
     if let Value::Str(s) = stack.pop().lock_ro().native.clone() {
-        stack.push(Value::Func(AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::SPL(lexer::lex(s, "dyn-read@".to_owned() + &stack.get_origin().file, stack.get_frame())),
-            origin: stack.get_frame(),
-        })).spl());
+        stack.push(
+            Value::Func(AFunc::new(Func {
+                ret_count: 0,
+                to_call: FuncImpl::SPL(lexer::lex(
+                    s,
+                    "dyn-read@".to_owned() + &stack.get_origin().file,
+                    stack.get_frame(),
+                )),
+                origin: stack.get_frame(),
+            }))
+            .spl(),
+        );
     } else {
         panic!("incorrect usage of dyn-call");
     }

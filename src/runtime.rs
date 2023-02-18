@@ -702,7 +702,18 @@ impl Words {
                     let o = o.lock_ro();
                     // TODO: raise error if not found
                     let f0 = o.kind.lock_ro();
-                    let f = f0.functions.get(&x).unwrap_or_else(|| panic!("objcall not possible. {} {:?} {}", o.kind.lock_ro().name, o.native, x)).clone();
+                    let f = f0
+                        .functions
+                        .get(&x)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "objcall not possible. {} {:?} {}",
+                                o.kind.lock_ro().name,
+                                o.native,
+                                x
+                            )
+                        })
+                        .clone();
                     mem::drop(f0);
                     mem::drop(o);
                     if ra != 0 {

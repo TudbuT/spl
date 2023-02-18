@@ -1,9 +1,6 @@
 use spl::{lexer::lex, runtime::*};
 
-use std::{
-    fs,
-    vec,
-};
+use std::{fs, vec};
 
 fn main() {
     let rt = Runtime::new();

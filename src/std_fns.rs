@@ -172,110 +172,136 @@ pub fn star(stack: &mut Stack) {
 
 pub fn to_int(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Int(match o {
-        Value::Null => panic!("incompatible: null - int"),
-        Value::Int(x) => x,
-        Value::Long(x) => x as i32,
-        Value::Mega(x) => x as i32,
-        Value::Float(x) => x as i32,
-        Value::Double(x) => x as i32,
-        Value::Func(_) => panic!("incompatible: func - int"),
-        Value::Array(_) => panic!("incompatible: array - int"),
-        Value::Str(x) => x.parse().expect("invalid int"),
-    }).spl())
+    stack.push(
+        Value::Int(match o {
+            Value::Null => panic!("incompatible: null - int"),
+            Value::Int(x) => x,
+            Value::Long(x) => x as i32,
+            Value::Mega(x) => x as i32,
+            Value::Float(x) => x as i32,
+            Value::Double(x) => x as i32,
+            Value::Func(_) => panic!("incompatible: func - int"),
+            Value::Array(_) => panic!("incompatible: array - int"),
+            Value::Str(x) => x.parse().expect("invalid int"),
+        })
+        .spl(),
+    )
 }
 
 pub fn to_long(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Long(match o {
-        Value::Null => panic!("incompatible: null - long"),
-        Value::Int(x) => x as i64,
-        Value::Long(x) => x as i64,
-        Value::Mega(x) => x as i64,
-        Value::Float(x) => x as i64,
-        Value::Double(x) => x as i64,
-        Value::Func(_) => panic!("incompatible: func - long"),
-        Value::Array(_) => panic!("incompatible: array - long"),
-        Value::Str(x) => x.parse().expect("invalid long"),
-    }).spl())
+    stack.push(
+        Value::Long(match o {
+            Value::Null => panic!("incompatible: null - long"),
+            Value::Int(x) => x as i64,
+            Value::Long(x) => x as i64,
+            Value::Mega(x) => x as i64,
+            Value::Float(x) => x as i64,
+            Value::Double(x) => x as i64,
+            Value::Func(_) => panic!("incompatible: func - long"),
+            Value::Array(_) => panic!("incompatible: array - long"),
+            Value::Str(x) => x.parse().expect("invalid long"),
+        })
+        .spl(),
+    )
 }
 
 pub fn to_mega(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Mega(match o {
-        Value::Null => panic!("incompatible: null - mega"),
-        Value::Int(x) => x as i128,
-        Value::Long(x) => x as i128,
-        Value::Mega(x) => x as i128,
-        Value::Float(x) => x as i128,
-        Value::Double(x) => x as i128,
-        Value::Func(_) => panic!("incompatible: func - mega"),
-        Value::Array(_) => panic!("incompatible: array - mega"),
-        Value::Str(x) => x.parse().expect("invalid mega"),
-    }).spl())
+    stack.push(
+        Value::Mega(match o {
+            Value::Null => panic!("incompatible: null - mega"),
+            Value::Int(x) => x as i128,
+            Value::Long(x) => x as i128,
+            Value::Mega(x) => x as i128,
+            Value::Float(x) => x as i128,
+            Value::Double(x) => x as i128,
+            Value::Func(_) => panic!("incompatible: func - mega"),
+            Value::Array(_) => panic!("incompatible: array - mega"),
+            Value::Str(x) => x.parse().expect("invalid mega"),
+        })
+        .spl(),
+    )
 }
 
 pub fn to_float(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Float(match o {
-        Value::Null => panic!("incompatible: null - float"),
-        Value::Int(x) => x as f32,
-        Value::Long(x) => x as f32,
-        Value::Mega(x) => x as f32,
-        Value::Float(x) => x as f32,
-        Value::Double(x) => x as f32,
-        Value::Func(_) => panic!("incompatible: func - float"),
-        Value::Array(_) => panic!("incompatible: array - float"),
-        Value::Str(x) => x.parse().expect("invalid float"),
-    }).spl())
+    stack.push(
+        Value::Float(match o {
+            Value::Null => panic!("incompatible: null - float"),
+            Value::Int(x) => x as f32,
+            Value::Long(x) => x as f32,
+            Value::Mega(x) => x as f32,
+            Value::Float(x) => x as f32,
+            Value::Double(x) => x as f32,
+            Value::Func(_) => panic!("incompatible: func - float"),
+            Value::Array(_) => panic!("incompatible: array - float"),
+            Value::Str(x) => x.parse().expect("invalid float"),
+        })
+        .spl(),
+    )
 }
 
 pub fn to_double(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Double(match o {
-        Value::Null => panic!("incompatible: null - double"),
-        Value::Int(x) => x as f64,
-        Value::Long(x) => x as f64,
-        Value::Mega(x) => x as f64,
-        Value::Float(x) => x as f64,
-        Value::Double(x) => x as f64,
-        Value::Func(_) => panic!("incompatible: func - double"),
-        Value::Array(_) => panic!("incompatible: array - double"),
-        Value::Str(x) => x.parse().expect("invalid double"),
-    }).spl())
+    stack.push(
+        Value::Double(match o {
+            Value::Null => panic!("incompatible: null - double"),
+            Value::Int(x) => x as f64,
+            Value::Long(x) => x as f64,
+            Value::Mega(x) => x as f64,
+            Value::Float(x) => x as f64,
+            Value::Double(x) => x as f64,
+            Value::Func(_) => panic!("incompatible: func - double"),
+            Value::Array(_) => panic!("incompatible: array - double"),
+            Value::Str(x) => x.parse().expect("invalid double"),
+        })
+        .spl(),
+    )
 }
 
 pub fn to_array(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Array(match o {
-        Value::Null => panic!("incompatible: null - array"),
-        Value::Int(_) => panic!("incompatible: int - array"),
-        Value::Long(_) => panic!("incompatible: long - array"),
-        Value::Mega(_) => panic!("incompatible: mega - array"),
-        Value::Float(_) => panic!("incompatible: float - array"),
-        Value::Double(_) => panic!("incompatible: double - array"),
-        Value::Func(_) => panic!("incompatible: func - array"),
-        Value::Array(x) => x,
-        Value::Str(x) => x.chars().map(|x| Value::Int(x as u32 as i32).spl()).collect(),
-    }).spl())
+    stack.push(
+        Value::Array(match o {
+            Value::Null => panic!("incompatible: null - array"),
+            Value::Int(_) => panic!("incompatible: int - array"),
+            Value::Long(_) => panic!("incompatible: long - array"),
+            Value::Mega(_) => panic!("incompatible: mega - array"),
+            Value::Float(_) => panic!("incompatible: float - array"),
+            Value::Double(_) => panic!("incompatible: double - array"),
+            Value::Func(_) => panic!("incompatible: func - array"),
+            Value::Array(x) => x,
+            Value::Str(x) => x
+                .chars()
+                .map(|x| Value::Int(x as u32 as i32).spl())
+                .collect(),
+        })
+        .spl(),
+    )
 }
 
 pub fn to_str(stack: &mut Stack) {
     let o = stack.pop().lock_ro().native.clone();
-    stack.push(Value::Str(match o {
-        Value::Null => panic!("incompatible: null - str"),
-        Value::Int(x) => x.to_string(),
-        Value::Long(x) => x.to_string(),
-        Value::Mega(x) => x.to_string(),
-        Value::Float(x) => x.to_string(),
-        Value::Double(x) => x.to_string(),
-        Value::Func(_) => panic!("incompatible: func - str"),
-        Value::Array(x) => String::from_iter(x.into_iter().map(|x| match &x.lock_ro().native {
-            Value::Int(x) => char::from_u32(*x as u32).expect("invalid Unicode Char: {x}"),
-            _ => panic!("incompatible: !int - __str_element")
-        })),
-        Value::Str(x) => x,
-    }).spl())
+    stack.push(
+        Value::Str(match o {
+            Value::Null => panic!("incompatible: null - str"),
+            Value::Int(x) => x.to_string(),
+            Value::Long(x) => x.to_string(),
+            Value::Mega(x) => x.to_string(),
+            Value::Float(x) => x.to_string(),
+            Value::Double(x) => x.to_string(),
+            Value::Func(_) => panic!("incompatible: func - str"),
+            Value::Array(x) => {
+                String::from_iter(x.into_iter().map(|x| match &x.lock_ro().native {
+                    Value::Int(x) => char::from_u32(*x as u32).expect("invalid Unicode Char: {x}"),
+                    _ => panic!("incompatible: !int - __str_element"),
+                }))
+            }
+            Value::Str(x) => x,
+        })
+        .spl(),
+    )
 }
 
 pub fn call(stack: &mut Stack) {
