@@ -35,6 +35,8 @@ impl Runtime {
         rt.make_type("int".to_owned(), |t| t);
         rt.make_type("long".to_owned(), |t| t);
         rt.make_type("mega".to_owned(), |t| t);
+        rt.make_type("float".to_owned(), |t| t);
+        rt.make_type("double".to_owned(), |t| t);
         rt.make_type("func".to_owned(), |t| t);
         rt.make_type("array".to_owned(), |t| t);
         rt.make_type("str".to_owned(), |t| t);
@@ -260,7 +262,7 @@ impl Stack {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Keyword {
     /// <none>
     ///
@@ -316,11 +318,13 @@ pub enum Constant {
     Int(i32),
     Long(i64),
     Mega(i128),
+    Float(f32),
+    Double(f64),
     Func(AFunc),
     Str(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Word {
     Key(Keyword),
     Const(Constant),
@@ -328,7 +332,7 @@ pub enum Word {
     ObjCall(String, bool, u32),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Words {
     pub words: Vec<Word>,
 }
@@ -433,6 +437,8 @@ impl Object {
             Constant::Int(x) => x > &0,
             Constant::Long(x) => x > &0,
             Constant::Mega(x) => x > &0,
+            Constant::Float(_) => true,
+            Constant::Double(_) => true,
             Constant::Func(_) => true,
             Constant::Str(x) => x == "",
         }
@@ -450,9 +456,11 @@ impl From<Constant> for Object {
                     Constant::Int(_) => x.get_type_by_id(1),
                     Constant::Long(_) => x.get_type_by_id(2),
                     Constant::Mega(_) => x.get_type_by_id(3),
-                    Constant::Func(_) => x.get_type_by_id(4),
-                    // array is 5
-                    Constant::Str(_) => x.get_type_by_id(6),
+                    Constant::Float(_) => x.get_type_by_id(4),
+                    Constant::Double(_) => x.get_type_by_id(5),
+                    Constant::Func(_) => x.get_type_by_id(6),
+                    // array is 7
+                    Constant::Str(_) => x.get_type_by_id(8),
                 }
                 .expect("runtime uninitialized: default types not set.")
             }),

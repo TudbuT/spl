@@ -11,15 +11,19 @@ pub fn lex(input: String, filename: String) -> Words {
 
 fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u32>, Words, usize) {
     let mut rem = None;
-    if str_words[0] == "{" && isfn {
-        let mut r = 0_u32;
-        while str_words[r as usize + 1] != "|" {
-            r += 1;
-        }
-        rem = Some(r);
-    }
     let mut words = Vec::new();
     let mut i = 0;
+    if str_words[0] == "{" {
+        if isfn {
+            let mut r = 0_u32;
+            while str_words[r as usize + 1] != "|" {
+                r += 1;
+            }
+            i += r as usize + 1;
+            rem = Some(r);
+        }
+        i += 1;
+    }
     while i < str_words.len() {
         let word = str_words[i].to_owned();
         match word.as_str() {
@@ -118,6 +122,9 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
             "}" => {
                 break;
             }
+            x if x.starts_with("\"") => {
+                words.push(Word::Const(Constant::Str(x[1..].to_owned())));
+            }
             mut x => {
                 let mut ra = 0;
                 while x.starts_with("&") {
@@ -158,17 +165,15 @@ fn parse_line(line: &str) -> Vec<String> {
             if escaping {
                 if c == '\\' {
                     s += "\\";
-                    continue;
                 }
                 if c == 'n' {
                     s += "\n";
-                    continue;
                 }
                 if c == 'r' {
                     s += "\r";
-                    continue;
                 }
                 escaping = false;
+                continue;
             } else if c == '"' {
                 in_string = false;
                 escaping = false;
@@ -176,9 +181,11 @@ fn parse_line(line: &str) -> Vec<String> {
             }
             if c == '\\' {
                 escaping = true;
+                continue;
             }
         } else {
             if c == '"' {
+                s += "\"";
                 in_string = true;
                 continue;
             }
@@ -192,6 +199,9 @@ fn parse_line(line: &str) -> Vec<String> {
             }
         }
         s += String::from(c).as_str();
+    }
+    if s != "" {
+        words.push(s);
     }
     words
 }

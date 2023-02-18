@@ -1,4 +1,4 @@
-use spl::runtime::*;
+use spl::{lexer::lex, runtime::*};
 
 use std::{
     io::{stdout, Write},
@@ -49,5 +49,6 @@ fn main() {
         ],
     }
     .exec(&mut stack);
+    lex("func println { | print \"\\n\" print } def helloworld \"Hello, World\" =helloworld helloworld println".to_owned(), "TEST".to_owned()).exec(&mut stack);
     Runtime::reset();
 }
