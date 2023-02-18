@@ -125,6 +125,12 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
             x if x.starts_with("\"") => {
                 words.push(Word::Const(Constant::Str(x[1..].to_owned())));
             }
+            x if x.chars().all(|c| c.is_numeric() || c == '_') && !x.starts_with("_") => {
+                words.push(Word::Const(Constant::Mega(x.parse().unwrap())));
+            }
+            x if x.chars().all(|c| c.is_numeric() || c == '.' || c == '_') && !x.starts_with("_") => {
+                words.push(Word::Const(Constant::Double(x.parse().unwrap())));
+            }
             mut x => {
                 let mut ra = 0;
                 while x.starts_with("&") {
