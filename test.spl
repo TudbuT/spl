@@ -1,0 +1,100 @@
+
+def null
+
+func println { |
+    print "\n" print
+}
+
+{ int | array-get } "get" "array" dyn-def-method
+{ int | array-len } "len" "array" dyn-def-method
+{ | array-set } "set" "array" dyn-def-method
+{ | with this ;
+    def len this:len =len
+    def i 0 =i
+    while { i len lt } {
+        i this:get
+        i 1 + =i
+    }
+} "to-stack" "array" dyn-def-method
+
+{ any | with type ;
+    null clone type settype "construct" dyn-objcall
+} "new" "str" dyn-def-method
+
+
+construct ChangingArray {
+    array
+    ;
+    construct { this | with array this ; 
+        array this:=array
+        this
+    }
+    push { | with item this ;
+        [ this:array:to-stack item ] this:=array
+    }
+}
+construct ShrinkingArray_trait {
+    ;
+    pop { any | with this ; 
+        [ this:array:to-stack pop ] this:=array
+    }
+}
+
+include ShrinkingArray_trait in ChangingArray
+
+"ChangingArray now has push and pop.";
+
+construct shadow { }
+
+"Copy array";
+func acopy { array | with arr1 arr2 idx1 idx2 len ;
+
+    def i 0 =i
+    while { i len lt } {
+        (( i idx1 + ) arr1:get) (i idx2 +) arr2:set
+        i 1 + =i
+    }
+
+    arr2
+}
+
+func aadd { array | with arr1 arr2 ;
+
+    def newarr arr1:len arr2:len + anew =newarr
+
+    arr1 newarr 0 0         arr1:len acopy =newarr
+    arr2 newarr 0 arr1:len arr2:len acopy =newarr
+
+    newarr
+}
+
+func [ { shadow |
+    "array" "shadow" settype
+}
+
+func ] { array |
+    "create an array containing everything on stack until the arrayshadow";
+    def array 0 anew =array
+    def array2
+    while { dup [ eq not } {
+        1 anew =array2
+        0 array2:set
+        array2 array aadd =array
+    }
+    pop array
+}
+
+def thing 1 anew =thing
+
+"hi" 0 thing:set
+
+def thing2 thing ChangingArray:new =thing2
+
+"world" thing2:push
+
+def thing3 thing2:array =thing3
+
+0 thing3:get println
+1 thing3:get println
+
+"\"heya\" println" dyn-read call

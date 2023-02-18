@@ -1,28 +1,32 @@
+use std::sync::Arc;
+
 use crate::runtime::*;
 use readformat::*;
 
-pub fn lex(input: String, filename: String) -> Words {
+pub fn lex(input: String, filename: String, frame: Arc<Frame>) -> Words {
     let mut str_words = Vec::new();
     for line in input.split('\n') {
         str_words.append(&mut parse_line(line));
     }
-    read_block(&str_words[..], false, &FrameInfo { file: filename }).1
+    read_block(
+        &str_words[..],
+        false,
+        Arc::new(Frame::new_in(frame, filename)),
+    )
+    .1
 }
 
-fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u32>, Words, usize) {
+fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u32>, Words, usize) {
     let mut rem = None;
     let mut words = Vec::new();
     let mut i = 0;
-    if str_words[0] == "{" {
-        if isfn {
-            let mut r = 0_u32;
-            while str_words[r as usize + 1] != "|" {
-                r += 1;
-            }
-            i += r as usize + 1;
-            rem = Some(r);
+    if str_words[0] == "{" && isfn {
+        let mut r = 0_u32;
+        while str_words[r as usize + 1] != "|" {
+            r += 1;
         }
-        i += 1;
+        i += r as usize + 2;
+        rem = Some(r);
     }
     while i < str_words.len() {
         let word = str_words[i].to_owned();
@@ -33,7 +37,11 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
             }
             "func" => {
                 if let Some(dat) = readf("func\0{}\0{", str_words[i..=i + 2].join("\0").as_str()) {
-                    let block = read_block(&str_words[i + 2..], true, &origin);
+                    let block = read_block(
+                        &str_words[i + 2..],
+                        true,
+                        Arc::new(Frame::new(origin.clone())),
+                    );
                     i += 2 + block.2;
                     words.push(Word::Key(Keyword::Func(
                         dat[0].to_owned(),
@@ -43,9 +51,9 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
                 }
             }
             "{" => {
-                let block = read_block(&str_words[i..], true, &origin);
+                let block = read_block(&str_words[i..], true, Arc::new(Frame::new(origin.clone())));
                 i += block.2;
-                words.push(Word::Const(Constant::Func(AFunc::new(Func {
+                words.push(Word::Const(Value::Func(AFunc::new(Func {
                     ret_count: block.0.expect("LEXERR: Expected `{ <type> <...> |`."),
                     to_call: FuncImpl::SPL(block.1),
                     origin: origin.to_owned(),
@@ -59,17 +67,21 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
                     "LEXERR: Expected `construct <name> {{`, got `construct <name>`"
                 );
                 let mut fields = Vec::new();
-                i += 2;
+                i += 3;
                 while str_words[i] != ";" && str_words[i] != "}" {
                     fields.push((&str_words[i]).to_owned());
                     i += 1;
                 }
                 let mut methods = Vec::new();
+                let mut has_construct = false;
                 if str_words[i] == ";" {
                     i += 1;
                     while str_words[i] != "}" {
                         let name = (&str_words[i]).to_owned();
-                        let block = read_block(&str_words[i + 1..], true, origin);
+                        if name == "construct" {
+                            has_construct = true;
+                        }
+                        let block = read_block(&str_words[i + 1..], true, origin.clone());
                         i += 1 + block.2;
                         methods.push((
                             name,
@@ -81,12 +93,15 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
                         i += 1;
                     }
                 }
+                if !has_construct {
+                    methods.push(("construct".to_string(), (1, Words { words: vec![] })));
+                }
                 words.push(Word::Key(Keyword::Construct(name, fields, methods)));
             }
             "include" => {
                 if let Some(x) = readf(
                     "include\0{}\0in\0{}",
-                    str_words[i..=i + 4].join("\0").as_str(),
+                    str_words[i..i + 4].join("\0").as_str(),
                 ) {
                     words.push(Word::Key(Keyword::Include(
                         x[0].to_owned(),
@@ -95,20 +110,19 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
                 } else {
                     panic!("LEXERR: Expected `include <typeA> in <typeB>`.");
                 }
+                i += 3;
             }
             "while" => {
-                let cond = read_block(&str_words[i + 1..], false, origin);
-                i += 1 + cond.2;
-                let blk = read_block(&str_words[i + 1..], false, origin);
-                i += 1 + cond.2;
+                let cond = read_block(&str_words[i + 2..], false, origin.clone());
+                i += 2 + cond.2;
+                let blk = read_block(&str_words[i + 2..], false, origin.clone());
+                i += 2 + blk.2;
                 words.push(Word::Key(Keyword::While(cond.1, blk.1)));
             }
             "if" => {
-                let cond = read_block(&str_words[i + 1..], false, origin);
-                i += 1 + cond.2;
-                let blk = read_block(&str_words[i + 1..], false, origin);
-                i += 1 + cond.2;
-                words.push(Word::Key(Keyword::If(cond.1, blk.1)));
+                let blk = read_block(&str_words[i + 2..], false, origin.clone());
+                i += 2 + blk.2;
+                words.push(Word::Key(Keyword::If(blk.1)));
             }
             "with" => {
                 let mut vars = Vec::new();
@@ -123,24 +137,27 @@ fn read_block(str_words: &[String], isfn: bool, origin: &FrameInfo) -> (Option<u
                 break;
             }
             x if x.starts_with("\"") => {
-                words.push(Word::Const(Constant::Str(x[1..].to_owned())));
+                words.push(Word::Const(Value::Str(x[1..].to_owned())));
             }
             x if x.chars().all(|c| c.is_numeric() || c == '_') && !x.starts_with("_") => {
-                words.push(Word::Const(Constant::Mega(x.parse().unwrap())));
+                words.push(Word::Const(Value::Mega(x.parse().unwrap())));
             }
-            x if x.chars().all(|c| c.is_numeric() || c == '.' || c == '_') && !x.starts_with("_") => {
-                words.push(Word::Const(Constant::Double(x.parse().unwrap())));
+            x if x.chars().all(|c| c.is_numeric() || c == '.' || c == '_')
+                && !x.starts_with("_") =>
+            {
+                words.push(Word::Const(Value::Double(x.parse().unwrap())));
             }
-            mut x => {
+            x => {
+                let mut word = x.split(":").next().unwrap();
                 let mut ra = 0;
-                while x.starts_with("&") {
+                while word.starts_with("&") {
                     ra += 1;
-                    x = &x[1..];
+                    word = &word[1..];
                 }
-                if x.ends_with(";") {
-                    words.push(Word::Call(x[..x.len() - 1].to_owned(), true, ra));
+                if word.ends_with(";") {
+                    words.push(Word::Call(word[..word.len() - 1].to_owned(), true, ra));
                 } else {
-                    words.push(Word::Call(x.to_owned(), false, ra));
+                    words.push(Word::Call(word.to_owned(), false, ra));
                 }
                 for mut word in x.split(":").skip(1) {
                     let mut ra = 0;
@@ -165,6 +182,7 @@ fn parse_line(line: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut in_string = false;
     let mut escaping = false;
+    let mut was_in_string = false;
     let mut s = String::new();
     for c in line.chars() {
         if in_string {
@@ -178,11 +196,15 @@ fn parse_line(line: &str) -> Vec<String> {
                 if c == 'r' {
                     s += "\r";
                 }
+                if c == '"' {
+                    s += "\"";
+                }
                 escaping = false;
                 continue;
             } else if c == '"' {
                 in_string = false;
                 escaping = false;
+                was_in_string = true;
                 continue;
             }
             if c == '\\' {
@@ -195,15 +217,24 @@ fn parse_line(line: &str) -> Vec<String> {
                 in_string = true;
                 continue;
             }
+            if c == ';' && was_in_string {
+                s = String::new();
+                continue;
+            }
+            if c == '(' || c == ')' {
+                continue;
+            }
             if c == ' ' {
                 if s == "" {
                     continue;
                 }
                 words.push(s);
                 s = String::new();
+                was_in_string = false;
                 continue;
             }
         }
+        was_in_string = false;
         s += String::from(c).as_str();
     }
     if s != "" {
