@@ -189,7 +189,11 @@ impl Stack {
     }
 
     pub fn call(&mut self, func: &AFunc) {
-        self.frames.push(Arc::new(Frame::new(func.origin.clone())));
+        let mut f = Frame::new(func.origin.clone());
+        if let Some(ref cname) = func.cname {
+            f.origin.file = cname.clone();
+        }
+        self.frames.push(Arc::new(f));
         func.to_call.call(self);
         self.frames.pop().unwrap();
     }
@@ -222,6 +226,7 @@ impl Stack {
                     stack.push(stack.get_var(tmpname.clone()))
                 }))),
                 origin: frame.clone(),
+                cname: Some("RUNTIME".to_owned()),
             }),
         );
         let tmpname = name.clone();
@@ -234,6 +239,7 @@ impl Stack {
                     stack.set_var(tmpname.clone(), v);
                 }))),
                 origin: frame.clone(),
+                cname: Some("RUNTIME".to_owned()),
             }),
         );
         frame.variables.lock().insert(name, Value::Null.spl());
@@ -400,6 +406,7 @@ pub struct Func {
     pub ret_count: u32,
     pub to_call: FuncImpl,
     pub origin: Arc<Frame>,
+    pub cname: Option<String>,
 }
 
 impl PartialEq for Func {
@@ -464,6 +471,7 @@ impl Type {
                     stack.push(o.lock_ro().property_map.get(&tmpname).unwrap().clone());
                 }))),
                 origin: origin.clone(),
+                cname: Some("RUNTIME".to_owned()),
             }),
         );
         let tmpname = name.clone();
@@ -477,6 +485,7 @@ impl Type {
                     o.lock().property_map.insert(tmpname.clone(), v);
                 }))),
                 origin,
+                cname: Some("RUNTIME".to_owned()),
             }),
         );
         self.properties.push(name);
@@ -603,6 +612,7 @@ impl Words {
                             ret_count: rem,
                             to_call: FuncImpl::SPL(words),
                             origin: stack.get_frame(),
+                            cname: None,
                         }),
                     ),
                     Keyword::Construct(name, fields, methods) => {
@@ -627,6 +637,7 @@ impl Words {
                                                                 ret_count: v.0,
                                                                 to_call: FuncImpl::SPL(v.1),
                                                                 origin: origin.clone(),
+                                                                cname: None,
                                                             }),
                                                         )
                                                     },
@@ -686,6 +697,7 @@ impl Words {
                                     stack.push(ftmp.clone().spl());
                                 }))),
                                 origin: stack.get_frame(),
+                                cname: None,
                             }));
                         }
                     } else {
@@ -726,6 +738,7 @@ impl Words {
                                     stack.push(ftmp.clone().spl());
                                 }))),
                                 origin: stack.get_frame(),
+                                cname: None,
                             }));
                         }
                     } else {

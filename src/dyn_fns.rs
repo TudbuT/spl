@@ -188,6 +188,7 @@ pub fn dyn_read(stack: &mut Stack) {
                     stack.get_frame(),
                 )),
                 origin: stack.get_frame(),
+                cname: None,
             }))
             .spl(),
         );
@@ -196,109 +197,49 @@ pub fn dyn_read(stack: &mut Stack) {
     }
 }
 
+pub fn dyn_readf(stack: &mut Stack) {
+    if let Value::Str(n) = stack.pop().lock_ro().native.clone() {
+        if let Value::Str(s) = stack.pop().lock_ro().native.clone() {
+            stack.push(
+                Value::Func(AFunc::new(Func {
+                    ret_count: 0,
+                    to_call: FuncImpl::SPL(lexer::lex(s, n.clone(), stack.get_frame())),
+                    origin: stack.get_frame(),
+                    cname: Some(n),
+                }))
+                .spl(),
+            );
+        } else {
+            panic!("incorrect usage of dyn-call");
+        }
+    } else {
+        panic!("incorrect usage of dyn-call");
+    }
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
-    r.define_func(
-        "dyn-__dump".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_dump),
+    let fns: [(&str, fn(&mut Stack), u32); 14] = [
+        ("dyn-__dump", dyn_dump, 0),
+        ("dyn-def", dyn_def, 0),
+        ("dyn-func", dyn_func, 0),
+        ("dyn-construct", dyn_construct, 0),
+        ("dyn-def-field", dyn_def_field, 0),
+        ("dyn-def-method", dyn_def_method, 0),
+        ("dyn-include", dyn_include, 0),
+        ("dyn-while", dyn_while, 0),
+        ("dyn-if", dyn_if, 0),
+        ("dyn-call", dyn_call, 0),
+        ("dyn-objcall", dyn_objcall, 0),
+        ("dyn-all-types", dyn_all_types, 1),
+        ("dyn-read", dyn_read, 1),
+        ("dyn-readf", dyn_readf, 1),
+    ];
+    for f in fns {
+        r.define_func(f.0.to_owned(), AFunc::new(Func {
+            ret_count: f.2,
+            to_call: FuncImpl::Native(f.1),
             origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-def".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_def),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-func".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_func),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-construct".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_construct),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-def-field".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_def_field),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-def-method".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_def_method),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-include".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_include),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-while".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_while),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-if".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_if),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-call".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_call),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-objcall".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(dyn_objcall),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-all-types".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(dyn_all_types),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dyn-read".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(dyn_read),
-            origin: o.clone(),
-        }),
-    )
+            cname: None,
+        }));
+    }
 }

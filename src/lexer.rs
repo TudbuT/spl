@@ -57,6 +57,7 @@ fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u
                     ret_count: block.0.expect("LEXERR: Expected `{ <type> <...> |`."),
                     to_call: FuncImpl::SPL(block.1),
                     origin: origin.to_owned(),
+                    cname: None,
                 }))))
             }
             "construct" => {

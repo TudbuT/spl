@@ -313,220 +313,41 @@ pub fn call(stack: &mut Stack) {
 }
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
-    r.define_func(
-        "pop".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(pop),
+    let fns: [(&str, fn(&mut Stack), u32); 27] = [
+        ("pop", pop, 0),
+        ("dup", dup, 2),
+        ("clone", clone, 1),
+        ("swap", swap, 2),
+        ("print", print, 0),
+        ("call", call, 0),
+        ("gettype", gettype, 1),
+        ("settype", settype, 1),
+        ("anew", array_new, 1),
+        ("array-len", array_len, 1),
+        ("array-get", array_get, 1),
+        ("array-set", array_set, 1),
+        ("eq", eq, 1),
+        ("lt", lt, 1),
+        ("gt", gt, 1),
+        ("not", not, 1),
+        ("+", plus, 1),
+        ("-", minus, 1),
+        ("/", slash, 1),
+        ("*", star, 1),
+        ("_int", to_int, 1),
+        ("_long", to_long, 1),
+        ("_mega", to_mega, 1),
+        ("_float", to_float, 1),
+        ("_double", to_double, 1),
+        ("_array", to_array, 1),
+        ("_str", to_str, 1),
+    ];
+    for f in fns {
+        r.define_func(f.0.to_owned(), AFunc::new(Func {
+            ret_count: f.2,
+            to_call: FuncImpl::Native(f.1),
             origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "dup".to_owned(),
-        AFunc::new(Func {
-            ret_count: 2,
-            to_call: FuncImpl::Native(dup),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "clone".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(clone),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "swap".to_owned(),
-        AFunc::new(Func {
-            ret_count: 2,
-            to_call: FuncImpl::Native(swap),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "print".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(print),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "call".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(call),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "gettype".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(gettype),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "settype".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(settype),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "anew".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(array_new),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "array-len".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(array_len),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "array-get".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(array_get),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "array-set".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(array_set),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "eq".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(eq),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "lt".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(lt),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "gt".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(gt),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "not".to_owned(),
-        AFunc::new(Func {
-            ret_count: 0,
-            to_call: FuncImpl::Native(not),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "+".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(plus),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "-".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(minus),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "/".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(slash),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "*".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(star),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_int".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_int),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_long".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_long),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_mega".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_mega),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_float".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_float),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_double".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_double),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_array".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_array),
-            origin: o.clone(),
-        }),
-    );
-    r.define_func(
-        "_str".to_owned(),
-        AFunc::new(Func {
-            ret_count: 1,
-            to_call: FuncImpl::Native(to_str),
-            origin: o.clone(),
-        }),
-    );
+            cname: None,
+        }));
+    }
 }
