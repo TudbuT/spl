@@ -3,20 +3,27 @@ use std::sync::Arc;
 use crate::runtime::*;
 use readformat::*;
 
-pub fn lex(input: String, filename: String, frame: Arc<Frame>) -> Words {
+#[derive(Debug, PartialEq, Eq)]
+pub enum LexerError {}
+
+pub fn lex(input: String, filename: String, frame: Arc<Frame>) -> Result<Words, LexerError> {
     let mut str_words = Vec::new();
     for line in input.split('\n') {
         str_words.append(&mut parse_line(line));
     }
-    read_block(
+    Ok(read_block(
         &str_words[..],
         false,
         Arc::new(Frame::new_in(frame, filename)),
-    )
-    .1
+    )?
+    .1)
 }
 
-fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u32>, Words, usize) {
+fn read_block(
+    str_words: &[String],
+    isfn: bool,
+    origin: Arc<Frame>,
+) -> Result<(Option<u32>, Words, usize), LexerError> {
     let mut rem = None;
     let mut words = Vec::new();
     let mut i = 0;
@@ -41,7 +48,7 @@ fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u
                         &str_words[i + 2..],
                         true,
                         Arc::new(Frame::new(origin.clone())),
-                    );
+                    )?;
                     i += 2 + block.2;
                     words.push(Word::Key(Keyword::Func(
                         dat[0].to_owned(),
@@ -51,7 +58,8 @@ fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u
                 }
             }
             "{" => {
-                let block = read_block(&str_words[i..], true, Arc::new(Frame::new(origin.clone())));
+                let block =
+                    read_block(&str_words[i..], true, Arc::new(Frame::new(origin.clone())))?;
                 i += block.2;
                 words.push(Word::Const(Value::Func(AFunc::new(Func {
                     ret_count: block.0.expect("LEXERR: Expected `{ <type> <...> |`."),
@@ -82,7 +90,7 @@ fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u
                         if name == "construct" {
                             has_construct = true;
                         }
-                        let block = read_block(&str_words[i + 1..], true, origin.clone());
+                        let block = read_block(&str_words[i + 1..], true, origin.clone())?;
                         i += 1 + block.2;
                         methods.push((
                             name,
@@ -114,14 +122,14 @@ fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u
                 i += 3;
             }
             "while" => {
-                let cond = read_block(&str_words[i + 2..], false, origin.clone());
+                let cond = read_block(&str_words[i + 2..], false, origin.clone())?;
                 i += 2 + cond.2;
-                let blk = read_block(&str_words[i + 2..], false, origin.clone());
+                let blk = read_block(&str_words[i + 2..], false, origin.clone())?;
                 i += 2 + blk.2;
                 words.push(Word::Key(Keyword::While(cond.1, blk.1)));
             }
             "if" => {
-                let blk = read_block(&str_words[i + 2..], false, origin.clone());
+                let blk = read_block(&str_words[i + 2..], false, origin.clone())?;
                 i += 2 + blk.2;
                 words.push(Word::Key(Keyword::If(blk.1)));
             }
@@ -176,7 +184,7 @@ fn read_block(str_words: &[String], isfn: bool, origin: Arc<Frame>) -> (Option<u
         }
         i += 1;
     }
-    (rem, Words { words }, i)
+    Ok((rem, Words { words }, i))
 }
 
 fn parse_line(line: &str) -> Vec<String> {

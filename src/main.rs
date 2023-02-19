@@ -2,7 +2,7 @@ use spl::{lexer::lex, runtime::*};
 
 use std::{fs, vec};
 
-fn main() {
+fn main() -> OError {
     let rt = Runtime::new();
     let mut stack = Stack::new();
     rt.set();
@@ -26,13 +26,17 @@ fn main() {
             Word::Call("println".to_owned(), true, 0),
         ],
     }
-    .exec(&mut stack);
+    .exec(&mut stack)?;
     let words = lex(
         fs::read_to_string("test.spl").unwrap(),
         "test.spl".to_owned(),
         stack.get_frame(),
-    );
-    println!("{words:?}");
-    words.exec(&mut stack);
+    ).map_err(|x| Error {
+        kind: ErrorKind::LexError(format!("{x:?}")),
+        stack: Vec::new(),
+    })?;
+    println!("{words:#?}");
+    words.exec(&mut stack)?;
     Runtime::reset();
+    Ok(())
 }

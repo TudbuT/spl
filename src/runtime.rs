@@ -14,6 +14,7 @@ use std::{
 pub type AMObject = Arc<Mut<Object>>;
 pub type AMType = Arc<Mut<Type>>;
 pub type AFunc = Arc<Func>;
+pub type OError = Result<(), Error>;
 
 thread_local! {
     static RUNTIME: RefCell<Option<Runtime>> = RefCell::new(None);
@@ -37,15 +38,15 @@ impl Runtime {
             types_by_name: HashMap::new(),
             types_by_id: HashMap::new(),
         };
-        rt.make_type("null".to_owned(), |t| t);
-        rt.make_type("int".to_owned(), |t| t);
-        rt.make_type("long".to_owned(), |t| t);
-        rt.make_type("mega".to_owned(), |t| t);
-        rt.make_type("float".to_owned(), |t| t);
-        rt.make_type("double".to_owned(), |t| t);
-        rt.make_type("func".to_owned(), |t| t);
-        rt.make_type("array".to_owned(), |t| t);
-        rt.make_type("str".to_owned(), |t| t);
+        let _ = rt.make_type("null".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("int".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("long".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("mega".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("float".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("double".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("func".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("array".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("str".to_owned(), |t| Ok(t)); // infallible
         rt
     }
 
@@ -61,17 +62,17 @@ impl Runtime {
         self.types_by_id.clone().into_values().collect()
     }
 
-    pub fn make_type(&mut self, name: String, op: impl FnOnce(Type) -> Type) -> AMType {
+    pub fn make_type(&mut self, name: String, op: impl FnOnce(Type) -> Result<Type, Error>) -> Result<AMType, Error> {
         let t = Arc::new(Mut::new(op(Type {
             name: name.clone(),
             id: (self.next_type_id, self.next_type_id += 1).0,
             parents: Vec::new(),
             functions: HashMap::new(),
             properties: Vec::new(),
-        })));
+        })?));
         self.types_by_id.insert(self.next_type_id - 1, t.clone());
         self.types_by_name.insert(name, t.clone());
-        t
+        Ok(t)
     }
 
     pub fn set(self) {
@@ -139,6 +140,41 @@ impl Frame {
             origin: FrameInfo { file: origin },
         }
     }
+
+    pub fn set_var(&self, name: String, obj: AMObject, stack: &Stack) -> OError {
+        let mut frame = self;
+        loop {
+            if let Some(x) = frame.variables.lock().get_mut(&name) {
+                *x = obj;
+                return Ok(());
+            }
+            if let Some(ref x) = frame.parent {
+                frame = x;
+            } else {
+                return Err(Error {
+                    kind: ErrorKind::VariableNotFound(name),
+                    stack: stack.trace(),
+                });
+            }
+        }
+    }
+
+    pub fn get_var(&self, name: String, stack: &Stack) -> Result<AMObject, Error> {
+        let mut frame = self;
+        loop {
+            if let Some(x) = frame.variables.lock_ro().get(&name) {
+                return Ok(x.clone());
+            }
+            if let Some(ref x) = frame.parent {
+                frame = x;
+            } else {
+                return Err(Error {
+                    kind: ErrorKind::VariableNotFound(name),
+                    stack: stack.trace(),
+                });
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -188,91 +224,74 @@ impl Stack {
             .insert(name, func);
     }
 
-    pub fn call(&mut self, func: &AFunc) {
+    pub fn call(&mut self, func: &AFunc) -> OError {
         let mut f = Frame::new(func.origin.clone());
         if let Some(ref cname) = func.cname {
             f.origin.file = cname.clone();
         }
         self.frames.push(Arc::new(f));
-        func.to_call.call(self);
+        func.to_call.call(self)?;
         self.frames.pop().unwrap();
+        Ok(())
     }
 
-    pub fn get_func(&self, name: String) -> AFunc {
+    pub fn get_func(&self, name: String) -> Result<AFunc, Error> {
         let mut frame = self.frames.last().unwrap();
         loop {
             let functions = &frame.functions;
             if let Some(x) = functions.lock_ro().get(&name) {
-                return x.clone();
+                return Ok(x.clone());
             }
             if let Some(ref x) = frame.parent {
                 frame = x;
             } else {
-                panic!("Function not found: {}", name)
+                return Err(Error {
+                    kind: ErrorKind::FuncNotFound(name),
+                    stack: self.trace(),
+                });
             }
         }
     }
 
-    // TODO actually use the frame for the variable (can cause issues when using referenced
-    // functions)
     pub fn define_var(&mut self, name: String) {
         let frame = self.frames.last_mut().unwrap().clone();
         let tmpname = name.clone();
+        let tmpframe = frame.clone();
         frame.functions.lock().insert(
             name.clone(),
             Arc::new(Func {
                 ret_count: 1,
-                to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
-                    stack.push(stack.get_var(tmpname.clone()))
-                }))),
                 origin: frame.clone(),
+                to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
+                    stack.push(tmpframe.get_var(tmpname.clone(), &stack)?);
+                    Ok(())
+                }))),
                 cname: Some("RUNTIME".to_owned()),
             }),
         );
         let tmpname = name.clone();
-        frame.functions.lock().insert(
+        let tmpframe = frame.clone();
+        frame.clone().functions.lock().insert(
             "=".to_owned() + &name,
             Arc::new(Func {
                 ret_count: 0,
+                origin: frame.clone(),
                 to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
                     let v = stack.pop();
-                    stack.set_var(tmpname.clone(), v);
+                    tmpframe.set_var(tmpname.clone(), v, &stack)
                 }))),
-                origin: frame.clone(),
                 cname: Some("RUNTIME".to_owned()),
             }),
         );
         frame.variables.lock().insert(name, Value::Null.spl());
     }
 
-    pub fn set_var(&mut self, name: String, obj: AMObject) {
-        let mut frame = self.frames.last().unwrap();
-        loop {
-            if let Some(x) = frame.variables.lock().get_mut(&name) {
-                *x = obj;
-                break;
-            }
-            if let Some(ref x) = frame.parent {
-                frame = x;
-            } else {
-                dyn_fns::dyn_dump(self);
-                panic!("undefined var: {name}");
-            }
-        }
+    pub fn set_var(&self, name: String, obj: AMObject) -> OError {
+        self.get_frame().set_var(name, obj, self)
     }
 
-    pub fn get_var(&self, name: String) -> AMObject {
-        let mut frame = self.frames.last().unwrap();
-        loop {
-            if let Some(x) = frame.variables.lock_ro().get(&name) {
-                return x.clone();
-            }
-            if let Some(ref x) = frame.parent {
-                frame = x;
-            } else {
-                panic!("undefined var")
-            }
-        }
+    pub fn get_var(&self, name: String) -> Result<AMObject, Error> {
+        self.get_frame().get_var(name, self)
     }
 
     pub fn push(&mut self, obj: AMObject) {
@@ -296,6 +315,24 @@ impl Stack {
 
     pub fn get_frame(&self) -> Arc<Frame> {
         self.frames.last().unwrap().clone()
+    }
+
+    pub fn err<T>(&self, kind: ErrorKind) -> Result<T, Error> {
+        Err(Error {
+            kind,
+            stack: self.trace(),
+        })
+    }
+
+    pub fn error(&self, kind: ErrorKind) -> Error {
+        Error {
+            kind,
+            stack: self.trace(),
+        }
+    }
+
+    pub fn trace(&self) -> Vec<String> {
+        todo!()
     }
 }
 
@@ -386,13 +423,13 @@ pub struct Words {
 
 #[derive(Clone)]
 pub enum FuncImpl {
-    Native(fn(&mut Stack)),
-    NativeDyn(Arc<Box<dyn Fn(&mut Stack)>>),
+    Native(fn(&mut Stack) -> OError),
+    NativeDyn(Arc<Box<dyn Fn(&mut Stack) -> OError>>),
     SPL(Words),
 }
 
 impl FuncImpl {
-    pub fn call(&self, stack: &mut Stack) {
+    pub fn call(&self, stack: &mut Stack) -> OError {
         match self {
             FuncImpl::Native(x) => x(stack),
             FuncImpl::NativeDyn(x) => x(stack),
@@ -460,7 +497,7 @@ impl Type {
         None
     }
 
-    pub fn add_property(&mut self, name: String, origin: Arc<Frame>) {
+    pub fn add_property(&mut self, name: String, origin: Arc<Frame>) -> OError {
         let tmpname = name.clone();
         self.functions.insert(
             name.clone(),
@@ -468,7 +505,19 @@ impl Type {
                 ret_count: 1,
                 to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
                     let o = stack.pop();
-                    stack.push(o.lock_ro().property_map.get(&tmpname).unwrap().clone());
+                    let o = o.lock_ro();
+                    stack.push(
+                        o.property_map
+                            .get(&tmpname)
+                            .ok_or_else(|| {
+                                stack.error(ErrorKind::PropertyNotFound(
+                                    o.kind.lock_ro().name.clone(),
+                                    tmpname.clone(),
+                                ))
+                            })?
+                            .clone(),
+                    );
+                    Ok(())
                 }))),
                 origin: origin.clone(),
                 cname: Some("RUNTIME".to_owned()),
@@ -483,12 +532,14 @@ impl Type {
                     let o = stack.pop();
                     let v = stack.pop();
                     o.lock().property_map.insert(tmpname.clone(), v);
+                    Ok(())
                 }))),
                 origin,
                 cname: Some("RUNTIME".to_owned()),
             }),
         );
         self.properties.push(name);
+        Ok(())
     }
 }
 
@@ -567,7 +618,7 @@ impl From<Value> for Object {
         Object::new(
             RUNTIME.with(|x| {
                 let x = x.borrow();
-                let x = x.as_ref().unwrap();
+                let x = x.as_ref().expect("no runtime (use .set())");
                 match value {
                     Value::Null => x.get_type_by_id(0),
                     Value::Int(_) => x.get_type_by_id(1),
@@ -600,7 +651,7 @@ where
 }
 
 impl Words {
-    pub fn exec(&self, stack: &mut Stack) {
+    pub fn exec(&self, stack: &mut Stack) -> OError {
         for word in self.words.clone() {
             match word {
                 Word::Key(x) => match x {
@@ -623,11 +674,11 @@ impl Words {
                             Value::Str(
                                 RUNTIME
                                     .with(move |rt| {
-                                        rt.borrow_mut().as_mut().unwrap().make_type(
+                                        rt.borrow_mut().as_mut().expect("no runtime (use .set)").make_type(
                                             name,
                                             move |mut t| {
                                                 for field in fields {
-                                                    t.add_property(field, origin.clone());
+                                                    t.add_property(field, origin.clone())?;
                                                 }
                                                 t.functions.extend(methods.into_iter().map(
                                                     |(k, v)| {
@@ -642,51 +693,52 @@ impl Words {
                                                         )
                                                     },
                                                 ));
-                                                t
+                                                Ok(t)
                                             },
                                         )
-                                    })
+                                    })?
                                     .lock_ro()
                                     .get_name(),
                             )
                             .spl(),
-                        );
+                        )?;
                     }
                     Keyword::Include(ta, tb) => {
+                        let rstack = &stack;
                         RUNTIME.with(move |rt| {
                             let mut rt = rt.borrow_mut();
-                            let rt = rt.as_mut().unwrap();
-                            // TODO: Handle properly
-                            rt.get_type_by_name(tb)
-                                .unwrap()
+                            let rt = rt.as_mut().expect("no runtime (use .set())");
+                            Ok(
+                            rt.get_type_by_name(tb.clone())
+                                .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb.clone())))?
                                 .lock()
                                 .parents
-                                .push(rt.get_type_by_name(ta).unwrap())
-                        });
+                                .push(rt.get_type_by_name(ta).ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?))
+                        })?;
                     }
                     Keyword::While(cond, blk) => loop {
-                        cond.exec(stack);
+                        cond.exec(stack)?;
                         if !stack.pop().lock_ro().is_truthy() {
                             break;
                         }
-                        blk.exec(stack);
+                        blk.exec(stack)?;
                     },
                     Keyword::If(blk) => {
                         if stack.pop().lock_ro().is_truthy() {
-                            blk.exec(stack);
+                            blk.exec(stack)?;
                         }
                     }
                     Keyword::With(vars) => {
                         for var in vars.into_iter().rev() {
                             stack.define_var(var.clone());
                             let obj = stack.pop();
-                            stack.set_var(var, obj);
+                            stack.set_var(var, obj)?;
                         }
                     }
                 },
                 Word::Const(x) => stack.push(x.clone().spl()),
                 Word::Call(x, rem, ra) => {
-                    let f = stack.get_func(x);
+                    let f = stack.get_func(x)?;
                     if ra != 0 {
                         let mut f = Value::Func(f);
                         for _ in 1..ra {
@@ -695,13 +747,14 @@ impl Words {
                                 ret_count: 1,
                                 to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
                                     stack.push(ftmp.clone().spl());
+                                    Ok(())
                                 }))),
                                 origin: stack.get_frame(),
                                 cname: None,
                             }));
                         }
                     } else {
-                        stack.call(&f);
+                        stack.call(&f)?;
                         if rem {
                             for _ in 0..f.ret_count {
                                 stack.pop();
@@ -712,19 +765,14 @@ impl Words {
                 Word::ObjCall(x, rem, ra) => {
                     let o = stack.peek();
                     let o = o.lock_ro();
-                    // TODO: raise error if not found
                     let f0 = o.kind.lock_ro();
                     let f = f0
                         .functions
                         .get(&x)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "objcall not possible. {} {:?} {}",
-                                o.kind.lock_ro().name,
-                                o.native,
-                                x
-                            )
-                        })
+                        .ok_or_else(|| Error {
+                            kind: ErrorKind::MethodNotFound(f0.name.clone(), x),
+                            stack: stack.trace(),
+                        })?
                         .clone();
                     mem::drop(f0);
                     mem::drop(o);
@@ -736,13 +784,14 @@ impl Words {
                                 ret_count: 1,
                                 to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
                                     stack.push(ftmp.clone().spl());
+                                    Ok(())
                                 }))),
                                 origin: stack.get_frame(),
                                 cname: None,
                             }));
                         }
                     } else {
-                        stack.call(&f);
+                        stack.call(&f)?;
                         if rem {
                             for _ in 0..f.ret_count {
                                 stack.pop();
@@ -752,5 +801,25 @@ impl Words {
                 }
             }
         }
+        Ok(())
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ErrorKind {
+    Parse(String, String),
+    InvalidCall(String),
+    InvalidType(String, String),
+    VariableNotFound(String),
+    FuncNotFound(String),
+    MethodNotFound(String, String),
+    PropertyNotFound(String, String),
+    TypeNotFound(String),
+    LexError(String),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Error {
+    pub kind: ErrorKind,
+    pub stack: Vec<String>,
 }

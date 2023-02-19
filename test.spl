@@ -7,7 +7,7 @@ func println { |
 
 { int | array-get } "get" "array" dyn-def-method
 { int | array-len } "len" "array" dyn-def-method
-{ | array-set } "set" "array" dyn-def-method
+{ any | array-set } "set" "array" dyn-def-method
 { | with this ;
     def len this:len =len
     def i 0 =i
@@ -21,6 +21,10 @@ func println { |
     null clone type settype "construct" dyn-objcall
 } "new" "str" dyn-def-method
 
+{ | with callable this ; 
+    def i 0 =i
+    while { i this:len lt } { i this:get callable call i ++ =i }
+} "foreach" "array" dyn-def-method
 
 construct ChangingArray {
     array
@@ -51,7 +55,7 @@ func acopy { array | with arr1 arr2 idx1 idx2 len ;
 
     def i 0 =i
     while { i len lt } {
-        (( i idx1 + ) arr1:get) (i idx2 +) arr2:set
+        (( i idx1 + ) arr1:get) (i idx2 +) arr2:set;
         i 1 + =i
     }
 
@@ -62,7 +66,7 @@ func aadd { array | with arr1 arr2 ;
 
     def newarr arr1:len arr2:len + anew =newarr
 
-    arr1 newarr 0 0         arr1:len acopy =newarr
+    arr1 newarr 0 0        arr1:len acopy =newarr
     arr2 newarr 0 arr1:len arr2:len acopy =newarr
 
     newarr
@@ -78,23 +82,41 @@ func ] { array |
     def array2
     while { dup [ eq not } {
         1 anew =array2
-        0 array2:set
+        0 array2:set;
         array2 array aadd =array
     }
     pop array
 }
 
-def thing 1 anew =thing
+func ++ { mega |
+    1 +
+}
 
-"hi" 0 thing:set
+{ | with type ;
+    "registering on " print type println
+    { self | } "unwrap" type dyn-def-method
+} dyn-all-types:foreach
+{ | with this ;
+    "ERR: null cannot be unwrapped." println
+    1 _int exit
+} "unwrap" "null" dyn-def-method
 
-def thing2 thing ChangingArray:new =thing2
 
-"world" thing2:push
+def thing
 
-def thing3 thing2:array =thing3
+1 anew =thing
 
-0 thing3:get println
-1 thing3:get println
+"hi" 0 thing:unwrap:set;
 
-"\"heya\" println" dyn-read call
+def thing2 thing:unwrap ChangingArray:new =thing2
+
+"world" thing2:unwrap:push
+
+def thing3 thing2:unwrap:array =thing3
+
+0 thing3:unwrap:get println
+1 thing3:unwrap:get println
+
+"\"heya1\" println" dyn-read call
+
+{ | "heya2" println } call
