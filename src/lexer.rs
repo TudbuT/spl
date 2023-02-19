@@ -56,6 +56,7 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                 words.push(Word::Const(Value::Func(AFunc::new(Func {
                     ret_count: block.0.ok_or(LexerError::FunctionBlockExpected)?,
                     to_call: FuncImpl::SPL(block.1),
+                    run_at_base: false,
                     origin: Arc::new(Frame::dummy()),
                     fname: None,
                     name: "dyn".to_owned(),
@@ -136,14 +137,20 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
             x if x.starts_with('\"') => {
                 words.push(Word::Const(Value::Str(x[1..].to_owned())));
             }
-            x if x.chars().all(|c| c.is_numeric() || c == '_') && !x.starts_with('_') => {
+            x if x.chars().all(|c| c.is_numeric() || c == '_' || c == '-')
+                && !x.starts_with('_')
+                && x.contains(char::is_numeric) =>
+            {
                 words.push(Word::Const(Value::Mega(
                     x.parse()
                         .map_err(|_| LexerError::InvalidNumber(x.to_owned()))?,
                 )));
             }
-            x if x.chars().all(|c| c.is_numeric() || c == '.' || c == '_')
-                && !x.starts_with('_') =>
+            x if x
+                .chars()
+                .all(|c| c.is_numeric() || c == '.' || c == '_' || c == '-')
+                && !x.starts_with('_')
+                && x.contains(char::is_numeric) =>
             {
                 words.push(Word::Const(Value::Double(
                     x.parse()

@@ -1,0 +1,465 @@
+
+def null
+
+
+def program-name
+
+func println { |
+    print "\n" print
+}
+
+{ any | with type ;
+    null clone type settype "construct" dyn-objcall
+} "new" "str" dyn-def-method
+
+{ | with callable this ; 
+    def i 0 =i
+    while { i this:len lt } { i this:get callable call i ++ =i }
+} "foreach" "array" dyn-def-method
+
+construct _mega-ext {
+    ;
+    swap { .. | with this ;
+        i mswap
+        i -- mswap
+    }
+    mswap { .. | mswap }
+} include _mega-ext in mega
+construct _array-ext {
+    ;
+    get { any | array-get }
+    sget { any|null | with idx this ;
+        idx this:len lt idx -1 gt and dup if {
+            pop
+            idx this:get 
+            2 stop
+        } not if {
+            null
+        }
+    }
+    len { mega | array-len }
+    set { any | array-set }
+    to-stack { .. | with this ;
+        def len this:len =len
+        def i 0 =i
+        while { i len lt } {
+            i this:get
+            i ++ =i
+        }
+    }
+    foreach { | with callable this ; 
+        def i 0 =i
+        while { i this:len lt } { i this:get callable call i ++ =i }
+    }
+} include _array-ext in array
+
+construct _Iter {
+    ;
+    foreach { | with callable this ;
+        def itm
+        while { this:next dup =itm null eq not } {
+            itm callable call
+        }
+    }
+    collect { array | with this ;
+        [ { any | } this:foreach ]
+    }
+    map { MapIter | with map-function this ;
+        map-function this MapIter:new
+    }
+    reduce { ReduceIter | with reduce-function this ;
+        reduce-function this ReduceIter:new
+    }
+    fold { FoldIter | with accumulator fold-function this ;
+        accumulator fold-function this FoldIter:new
+    }
+    sum { mega | with this ; 
+        { mega | with accum item ;
+            accum item +
+        } this:reduce:calculate
+    }
+    product { mega | with this ; 
+        { mega | with accum item ;
+            accum item *
+        } this:reduce:calculate
+    }
+    filter { FilterIter | with filter this ;
+        filter this FilterIter:new
+    }
+}
+
+construct MapIter {
+    origin
+    map-function
+    ;
+    construct { this | with map-function origin this ;
+        origin this:=origin
+        map-function this:=map-function
+        this
+    }
+    next { any | with this ;
+        this:origin:next dup null eq if {
+            2 stop
+        }
+        this:map-function call
+    }
+}
+
+include _Iter in MapIter 
+
+construct ReduceIter {
+    origin
+    accumulator
+    reduce-function
+    ;
+    construct { this | with reduce-function origin this ;
+        origin this:=origin
+        reduce-function this:=reduce-function
+        this
+    }
+    next { any | with this ;
+        def itm 
+        this:origin:next dup null eq if {
+            2 stop
+        } =itm
+        this:accumulator null eq if {
+            itm dup this:=accumulator
+            2 stop
+        }
+        this:accumulator itm this:reduce-function call dup this:=accumulator
+    }
+    calculate { any | with this ;
+        { | pop } this:foreach
+        this:accumulator
+    }
+}
+
+include _Iter in ReduceIter
+
+construct FoldIter {
+    origin
+    accumulator
+    reduce-function
+    ;
+    construct { this | with accumulator fold-function origin this ;
+        accumulator this:=accumulator
+        origin this:=origin
+        fold-function this:=fold-function
+        this
+    }
+    next { any | with this ;
+        def itm 
+        this:origin:next dup null eq if {
+            2 stop
+        } =itm
+        this:accumulator itm this:fold-function call dup this:=accumulator
+    }
+}
+
+include _Iter in FoldIter
+
+construct FilterIter {
+    origin 
+    filter
+    ;
+    construct { this | with filter origin this ;
+        origin this:=origin
+        filter this:=filter
+        this
+    }
+    next { any | with this ;
+        while { 1 } {
+            def next this:origin:next =next 
+            next null eq if {
+                null
+                3 stop
+            }
+            next this:filter call if { 
+                next 3 stop
+            }
+        }
+        dyn-__dump
+    }
+}
+
+include _Iter in FilterIter
+
+construct List {
+    array
+    ;
+    construct { this | with array this ; 
+        array this:=array
+        this
+    }
+    get { any | _:array:get }
+    sget { any|null | _:array:sget }
+    len { mega | _:array:len }
+    set { any | _:array:set }
+}
+construct _GrowingArray {
+    ;
+    push-front { | with item this ;
+        [ item this:array:to-stack ] this:=array
+    }
+    push { | with item this ;
+        [ this:array:to-stack item ] this:=array
+    }
+    insert { | with item index this ;
+        this:array:len index - =index
+        [ this:array:to-stack index:mswap item (index ++):mswap ] this:=array
+    }
+}
+construct _ShrinkingArray {
+    ;
+    pop-front { any | with this ;
+        0 this:remove
+    }
+    pop { any | with this ; 
+        def item
+        [ this:array:to-stack =item ] this:=array
+        item
+    }
+    remove { any | with index this ;
+        def item
+        this:array:len index - =index
+        [ this:array:to-stack index:mswap =item (index --):mswap ] this:=array
+        item
+    }
+}
+
+include _GrowingArray in List
+include _ShrinkingArray in List
+
+construct ArrayIter {
+    array
+    idx
+    ;
+    construct { this | with array this ;
+        array this:=array
+        0 this:=idx
+        this
+    }
+    next { any | with this ; 
+        this:idx dup ++ this:=idx this:array:sget
+    }
+}
+construct _IterableArray {
+    ;
+    iter { ArrayIter | with this ;
+        this gettype "array" eq dup if {
+            pop
+            this ArrayIter:new
+            2 stop
+        } not if {
+            this:array ArrayIter:new
+        }
+    }
+}
+include _Iter in ArrayIter
+include _IterableArray in List
+include _IterableArray in array
+
+construct MicroMap {
+    pairs
+    ;
+    construct { this | with pairs this ;
+        pairs null eq if {
+            0 anew List:new =pairs
+        }
+        pairs:unwrap this:=pairs
+        this
+    }
+    get-entry { [any,any]|null | with key this ;
+        this:pairs:iter
+            { mega | 0 swap:get key eq } swap:filter
+            _:next
+    }
+    get-or-create-entry { [any,any] | with key this ;
+        { [any,any] | 
+            [ key null ] dup this:pairs:push
+        } key this:get-entry:unwrap-or
+    }
+    get { any | with key this ;
+        this:pairs:iter
+            { mega | 0 swap:get key eq } swap:filter
+            { any | 1 swap:get } swap:map
+            _:next
+    }
+    set { any | with key val this ;
+        val 1 (key this:get-or-create-entry):set
+    }
+    remove { any | with key this ;
+        this:pairs:iter
+            { mega | 0 swap:get key eq not } swap:filter
+            _:collect
+            List:new
+            =pairs
+    }
+    iter { ArrayIter | with this ;
+        this:pairs:iter
+    }
+}
+
+construct Range {
+    lower 
+    upper 
+    step
+    ;
+    construct { this | with lower upper this ;
+        lower _mega this:=lower
+        upper _mega this:=upper
+        1 this:=step
+        this
+    }
+    set-step { this | with step this ; 
+        step this:=step
+        this
+    }
+    iter { RangeIter | with this ;
+        this RangeIter:new
+    }
+    item { mega|null | with index this ;
+        def itm index this:step * this:lower + =itm
+        (itm this:upper lt) (itm this:lower lt not) and dup if {
+            pop
+            itm
+            2 stop
+        } not if {
+            2 stop
+        }
+    }
+}
+
+construct RangeIter {
+    range
+    idx
+    ;
+    construct { this | with range this ;
+        range this:=range
+        0 this:=idx
+        this
+    }
+    next { mega | with this ;
+        this:idx dup ++ this:=idx this:range:item
+    }
+}
+
+include _Iter in RangeIter
+
+construct shadow { }
+
+"Copy array";
+func acopy { array | with arr1 arr2 idx1 idx2 len ;
+
+    def i 0 =i
+    while { i len lt } {
+        (( i idx1 + ) arr1:get) (i idx2 +) arr2:set;
+        i ++ =i
+    }
+
+    arr2
+}
+
+func aadd { array | with arr1 arr2 ;
+
+    def newarr arr1:len arr2:len + anew =newarr
+
+    arr1 newarr 0 0        arr1:len acopy =newarr
+    arr2 newarr 0 arr1:len arr2:len acopy =newarr
+
+    newarr
+}
+
+func concat { str | with a b ;
+    a _array b _array aadd _str
+}
+
+func panic { | with msg ;
+    program-name dup if {
+        program-name print " panicked at:" println
+    } not if {
+        "Program panicked at:" println
+    }
+    { | with it ; 
+        it println 
+    } trace:foreach 
+    "Panic message:" println
+    "  " print msg println
+    def map env =map
+    "SPL_PANIC_DUMP" env:get dup if {
+        "Dumping because SPL_PANIC_DUMP is set." println
+        null =map
+        dyn-__dump
+    } not if {
+        "SPL_PLAIN_PANIC" map:get dup if {
+            "Not dumping because SPL_PLAIN_PANIC is set." println
+        } not if {
+            "Type 'Yes^M' to dump. You can set SPL_PANIC_DUMP to always dump "
+            "on panic, or SPL_PLAIN_PANIC to never dump." concat println
+            readln "Yes" eq if {
+                dyn-__dump
+            }
+        }
+    }
+    "Exiting." println
+    1 exit
+}
+
+{ | with msg this ;
+    this not if {
+        "Assertion failed!" panic
+    }
+} "assert" "int" dyn-def-method
+
+{ | with msg this ;
+    this if {
+        "Assertion failed!" panic
+    }
+} "nassert" "int" dyn-def-method
+
+func assert-eq { any any | with a b ;
+    a b eq not if {
+        "Equality assertion failed!" panic
+    }
+    a b
+}
+
+func [ { shadow |
+    "array" "shadow" settype
+}
+
+func ] { array |
+    [ alit-end
+}
+
+func env { MicroMap |
+    get-env List:new MicroMap:new
+}
+
+func ++ { mega |
+    1 +
+}
+
+func -- { mega |
+    1 -
+}
+
+func _ { | }
+
+func update-types { | 
+    { | with type ;
+        { self | } "unwrap" type dyn-def-method
+        { self | swap pop } "unwrap-or" type dyn-def-method
+    } dyn-all-types:foreach
+    { | with this ;
+        "null cannot be unwrapped." panic
+    } "unwrap" "null" dyn-def-method
+    { any | with fb this ;
+        fb call
+    } "unwrap-or" "null" dyn-def-method
+}
+update-types
+
+1 argv:sget:unwrap import
+update-types 
+argv main exit

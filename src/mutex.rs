@@ -1,10 +1,13 @@
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    fmt::Display,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
 #[derive(Debug)]
 pub struct Mut<T>(RwLock<T>);
 
 impl<T> Mut<T> {
-    pub fn new(obj: T) -> Mut<T> {
+    pub const fn new(obj: T) -> Mut<T> {
         Mut(RwLock::new(obj))
     }
 
@@ -14,6 +17,15 @@ impl<T> Mut<T> {
 
     pub fn lock(&self) -> RwLockWriteGuard<T> {
         self.0.write().unwrap()
+    }
+}
+
+impl<T> Display for Mut<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.read().unwrap().fmt(f)
     }
 }
 

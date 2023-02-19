@@ -6,14 +6,24 @@ func main { int | with args ;
 
     "hi" 0 thing:unwrap:set;
 
-    def thing2 thing:unwrap ChangingArray:new =thing2
+    def thing2 thing:unwrap List:new =thing2
 
     "world" thing2:unwrap:push
+    "hello" 0 thing2:unwrap:insert
 
-    def thing3 thing2:unwrap:array =thing3
+    "printing first two words of 'hello hi world' (should be 'hello hi')" println
+    " " print
+    0 thing2:unwrap:get print " " print
+    1 thing2:unwrap:get println
+    "removing hello" println
+    thing2:pop-front;
+    "printing first two words again" println
+    " " print
+    0 thing2:unwrap:get print " " print
+    1 thing2:unwrap:get println
 
-    0 thing3:unwrap:get println
-    1 thing3:unwrap:get println
+    "" println
+    "testing closures and func-ptrs" println
 
     def thingy 
     "heya1" =thingy
@@ -22,16 +32,67 @@ func main { int | with args ;
     "heya2" =thingy
     { | 
         thingy println 
-        { | 
-            { | with it ; 
-                it println 
-            } trace:foreach 
-        } call
     } call
+
+    def ptr 
+    &println =ptr
+    "ptr works" ptr call
+    &&println =ptr
+    "ptr-ptr works" ptr call call
+    thingy:&unwrap =ptr
+    "unwrap-ptr works" ptr call println
+    thingy:&&unwrap =ptr
+    "unwrap-ptr-ptr works" ptr call call println
+
+
+    "" println
+    "testing if" println
+
+    def a "test" =a
+    def b "test" =b
+    a b eq dup if {
+        a " is equal to " b concat concat println
+    } not if {
+        a " is not equal to " b concat concat panic
+    }
+
+    a b assert-eq;
+
+    "" println 
+    "testing ranges & iterators: (0..30@5) + 1" println
+
+    def range 5 (0 30 Range:new):set-step =range
+
+    range:iter 
+        { | 1 + } swap:map 
+        { | _str println } swap:foreach
+
+    "" println
+    "testing Iter:sum of 5 10s" println
+
+    0 5 Range:new:iter
+        { | pop 10 } swap:map
+        _:sum 
+        _str println
+
+    "" println
+    "testing MicroMap" println
+    
+    def map null MicroMap:new =map
+    "hey" "hello" map:set;
+    "helloworld" "Hello, World" map:set;
+    "{ " print
+    map:iter
+        { | with item ;
+            "'" print
+            0 item:get print
+            "': '" print 
+            1 item:get print
+            "', " print
+        } swap:foreach
+    "}" println
+
+    "" println
 
     100
 }
-
-{ | with it ; 
-    it println 
-} trace:foreach 

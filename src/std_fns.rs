@@ -1,11 +1,15 @@
 use std::{
-    io::{stdout, Write},
+    collections::VecDeque,
+    env::{args, var, vars},
+    fs,
+    io::{stdin, stdout, Write},
     mem, process,
     sync::Arc,
 };
 
-use crate::{mutex::Mut, runtime::*};
+use crate::{dyn_fns, mutex::Mut, runtime::*};
 
+#[macro_export]
 macro_rules! type_err {
     ($stack:expr, $a:expr, $b:expr) => {
         $stack.err(ErrorKind::InvalidType($a.to_owned(), $b.to_owned()))?
@@ -46,6 +50,21 @@ pub fn swap(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn mswap(stack: &mut Stack) -> OError {
+    let Value::Mega(i) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("nswap".to_owned()))
+    };
+    let mut array = VecDeque::with_capacity(i as usize);
+    for _ in 0..i {
+        array.push_back(stack.pop());
+    }
+    for _ in 0..i {
+        // SAFETY: Items must exist because they are added in the previous loop
+        stack.push(array.pop_front().unwrap());
+    }
+    Ok(())
+}
+
 pub fn settype(stack: &mut Stack) -> OError {
     let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("settype".to_owned()))
@@ -54,9 +73,7 @@ pub fn settype(stack: &mut Stack) -> OError {
     let kind = runtime(|rt| rt.get_type_by_name(s.clone()))
         .ok_or_else(|| stack.error(ErrorKind::TypeNotFound(s)))?;
     let mut obj = o.lock();
-    for property in &kind.lock_ro().properties {
-        obj.property_map.insert(property.clone(), Value::Null.spl());
-    }
+    kind.lock_ro().write_into(&mut obj);
     obj.kind = kind;
     mem::drop(obj);
     stack.push(o);
@@ -139,13 +156,41 @@ pub fn not(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn and(stack: &mut Stack) -> OError {
+    let a = stack.pop();
+    let b = stack.pop();
+    stack.push(
+        Value::Int(if a.lock_ro().is_truthy() && b.lock_ro().is_truthy() {
+            1
+        } else {
+            0
+        })
+        .spl(),
+    );
+    Ok(())
+}
+
+pub fn or(stack: &mut Stack) -> OError {
+    let a = stack.pop();
+    let b = stack.pop();
+    stack.push(
+        Value::Int(if a.lock_ro().is_truthy() || b.lock_ro().is_truthy() {
+            1
+        } else {
+            0
+        })
+        .spl(),
+    );
+    Ok(())
+}
+
 pub fn plus(stack: &mut Stack) -> OError {
-    let a = stack.pop().lock_ro().native.clone();
     let b = stack.pop().lock_ro().native.clone();
+    let a = stack.pop().lock_ro().native.clone();
     stack.push(
         match (a, b) {
             (Value::Mega(a), Value::Mega(b)) => Value::Mega(a + b),
-            _ => todo!(),
+            x => todo!("{x:?}"),
         }
         .spl(),
     );
@@ -153,8 +198,8 @@ pub fn plus(stack: &mut Stack) -> OError {
 }
 
 pub fn minus(stack: &mut Stack) -> OError {
-    let a = stack.pop().lock_ro().native.clone();
     let b = stack.pop().lock_ro().native.clone();
+    let a = stack.pop().lock_ro().native.clone();
     stack.push(
         match (a, b) {
             (Value::Mega(a), Value::Mega(b)) => Value::Mega(a - b),
@@ -166,8 +211,8 @@ pub fn minus(stack: &mut Stack) -> OError {
 }
 
 pub fn slash(stack: &mut Stack) -> OError {
-    let a = stack.pop().lock_ro().native.clone();
     let b = stack.pop().lock_ro().native.clone();
+    let a = stack.pop().lock_ro().native.clone();
     stack.push(
         match (a, b) {
             (Value::Mega(a), Value::Mega(b)) => Value::Mega(a / b),
@@ -179,8 +224,8 @@ pub fn slash(stack: &mut Stack) -> OError {
 }
 
 pub fn star(stack: &mut Stack) -> OError {
-    let a = stack.pop().lock_ro().native.clone();
     let b = stack.pop().lock_ro().native.clone();
+    let a = stack.pop().lock_ro().native.clone();
     stack.push(
         match (a, b) {
             (Value::Mega(a), Value::Mega(b)) => Value::Mega(a * b),
@@ -385,9 +430,7 @@ pub fn mr_trace(stack: &mut Stack) -> OError {
                             .map(|x| {
                                 let item = Value::Null.spl();
                                 let mut obj = item.lock();
-                                for property in &kind.lock_ro().properties {
-                                    obj.property_map.insert(property.clone(), Value::Null.spl());
-                                }
+                                kind.lock_ro().write_into(&mut obj);
                                 obj.kind = kind.clone();
                                 obj.property_map
                                     .insert("file".to_owned(), Value::Str(x.file).spl());
@@ -426,13 +469,121 @@ pub fn exec(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn exec2(stack: &mut Stack) -> OError {
+    let Value::Func(a) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("exec2".to_owned()))
+    };
+    unsafe {
+        let f = stack.pop_frame(0);
+        let f1 = stack.pop_frame(0);
+        a.to_call.call(stack)?;
+        stack.push_frame(f1);
+        stack.push_frame(f);
+    }
+    Ok(())
+}
+
+pub fn stop(stack: &mut Stack) -> OError {
+    let Value::Int(i) = stack.pop().lock_ro().native.clone().try_mega_to_int() else {
+        return stack.err(ErrorKind::InvalidCall("stop".to_owned()))
+    };
+    stack.return_accumultor += i as u32;
+    Ok(())
+}
+
+pub fn argv(stack: &mut Stack) -> OError {
+    stack.push(Value::Array(args().into_iter().map(|x| Value::Str(x).spl()).collect()).spl());
+    Ok(())
+}
+
+pub fn get_env(stack: &mut Stack) -> OError {
+    stack.push(
+        Value::Array(
+            vars()
+                .into_iter()
+                .map(|x| Value::Array(vec![Value::Str(x.0).spl(), Value::Str(x.1).spl()]).spl())
+                .collect(),
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
+pub fn read_file(stack: &mut Stack) -> OError {
+    let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("read_file".to_owned()))
+    };
+    stack.push(
+        Value::Str(
+            fs::read_to_string(s).map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?,
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
+pub fn alit_end(stack: &mut Stack) -> OError {
+    let s = stack.pop();
+    let popped = stack.pop_until(s);
+    stack.push(Value::Array(popped).spl());
+    Ok(())
+}
+
+pub fn import(stack: &mut Stack) -> OError {
+    let Value::Str(mut s) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("include".to_owned()))
+    };
+    if let Some(x) = s.strip_prefix('#') {
+        s = var("SPL_PATH").unwrap_or("/usr/lib/spl".to_owned()) + "/" + x;
+    } else if let Some(x) = s.strip_prefix('@') {
+        s = x.to_owned();
+    } else {
+        s = stack
+            .get_frame()
+            .origin
+            .file
+            .rsplit_once('/')
+            .map(|x| x.0)
+            .unwrap_or(".")
+            .to_owned()
+            + "/"
+            + &s;
+    }
+    stack.push(Value::Str(s).spl());
+    dup(stack)?;
+    read_file(stack)?;
+    dyn_fns::dyn_readf(stack)?;
+    call(stack)?;
+    Ok(())
+}
+
+pub fn readln(stack: &mut Stack) -> OError {
+    let mut s = String::new();
+    stdin()
+        .read_line(&mut s)
+        .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?;
+    let s = if let Some(s) = s.strip_suffix("\r\n") {
+        s.to_owned()
+    } else {
+        s
+    };
+    let s = if let Some(s) = s.strip_suffix('\n') {
+        s.to_owned()
+    } else {
+        s
+    };
+    stack.push(Value::Str(s).spl());
+    Ok(())
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 31] = [
+    let fns: [(&str, Fn, u32); 42] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
         ("swap", swap, 2),
+        ("mswap", mswap, 2),
         ("print", print, 0),
         ("gettype", gettype, 1),
         ("settype", settype, 1),
@@ -444,6 +595,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("lt", lt, 1),
         ("gt", gt, 1),
         ("not", not, 1),
+        ("and", and, 1),
+        ("or", or, 1),
         ("+", plus, 1),
         ("-", minus, 1),
         ("/", slash, 1),
@@ -460,6 +613,14 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("mr-trace", mr_trace, 1),
         ("exit", exit, 0),
         ("exec", exec, 0),
+        ("exec2", exec2, 0),
+        ("stop", stop, 0),
+        ("argv", argv, 1),
+        ("get-env", get_env, 1),
+        ("read-file", read_file, 1),
+        ("alit-end", alit_end, 1),
+        ("import", import, 0),
+        ("readln", readln, 1),
     ];
     for f in fns {
         r.define_func(
@@ -467,6 +628,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
             AFunc::new(Func {
                 ret_count: f.2,
                 to_call: FuncImpl::Native(f.1),
+                run_at_base: false,
                 origin: o.clone(),
                 fname: None,
                 name: f.0.to_owned(),

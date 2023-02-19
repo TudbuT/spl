@@ -1,7 +1,11 @@
-use crate::{dyn_fns, mutex::*, std_fns};
+use crate::{
+    dyn_fns,
+    mutex::*,
+    std_fns,
+    stream::{self, *},
+};
 
 use core::panic;
-use std::collections::VecDeque;
 use std::mem;
 use std::sync::RwLockWriteGuard;
 use std::{
@@ -11,6 +15,7 @@ use std::{
     sync::Arc,
     vec,
 };
+use std::{collections::VecDeque, thread::panicking};
 
 pub type AMObject = Arc<Mut<Object>>;
 pub type AMType = Arc<Mut<Type>>;
@@ -35,6 +40,19 @@ pub struct Runtime {
     next_type_id: u32,
     types_by_name: HashMap<String, AMType>,
     types_by_id: HashMap<u32, AMType>,
+    next_stream_id: u128,
+    streams: HashMap<u128, Arc<Mut<Stream>>>,
+}
+
+impl Debug for Runtime {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Runtime")
+            .field("next_type_id", &self.next_type_id)
+            .field("types_by_name", &self.types_by_name)
+            .field("types_by_id", &self.types_by_id)
+            .field("next_stream_id", &self.next_stream_id)
+            .finish()
+    }
 }
 
 impl Default for Runtime {
@@ -49,6 +67,8 @@ impl Runtime {
             next_type_id: 0,
             types_by_name: HashMap::new(),
             types_by_id: HashMap::new(),
+            next_stream_id: 0,
+            streams: HashMap::new(),
         };
         let _ = rt.make_type("null".to_owned(), Ok); // infallible
         let _ = rt.make_type("int".to_owned(), Ok); // infallible
@@ -91,6 +111,20 @@ impl Runtime {
         Ok(t)
     }
 
+    pub fn register_stream(&mut self, stream: Stream) -> (u128, Arc<Mut<Stream>>) {
+        let id = (self.next_stream_id, self.next_stream_id += 1).0;
+        self.streams.insert(id, Arc::new(Mut::new(stream)));
+        (id, self.streams.get(&id).unwrap().clone())
+    }
+
+    pub fn get_stream(&self, id: u128) -> Option<Arc<Mut<Stream>>> {
+        self.streams.get(&id).cloned()
+    }
+
+    pub fn destroy_stream(&mut self, id: u128) {
+        self.streams.remove(&id);
+    }
+
     pub fn reset() {
         RUNTIME.with(|x| *x.borrow_mut() = None);
     }
@@ -112,18 +146,19 @@ impl SetRuntime for Arc<Mut<Runtime>> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FrameInfo {
     pub file: String,
     pub function: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Frame {
     parent: Option<Arc<Frame>>,
     pub variables: Mut<HashMap<String, AMObject>>,
     pub functions: Mut<HashMap<String, AFunc>>,
     pub origin: FrameInfo,
+    pub redirect_to_base: bool,
 }
 
 impl Display for Frame {
@@ -136,6 +171,7 @@ impl Display for Frame {
             std::fmt::Display::fmt(&object.lock_ro(), f)?;
             f.write_str("\n")?;
         }
+        f.write_str("\n")?;
         Ok(())
     }
 }
@@ -150,6 +186,7 @@ impl Frame {
                 file: "\0".to_owned(),
                 function: "\0".to_owned(),
             },
+            redirect_to_base: false,
         }
     }
 
@@ -162,6 +199,7 @@ impl Frame {
                 file: "RUNTIME".to_owned(),
                 function: "root".to_owned(),
             },
+            redirect_to_base: false,
         }
     }
 
@@ -171,6 +209,7 @@ impl Frame {
             variables: Mut::new(HashMap::new()),
             functions: Mut::new(HashMap::new()),
             origin: info,
+            redirect_to_base: false,
         }
     }
 
@@ -183,10 +222,16 @@ impl Frame {
                 ..parent.origin.clone()
             },
             parent: Some(parent),
+            redirect_to_base: false,
         }
     }
 
-    pub fn new_in(parent: Arc<Frame>, origin: String, function: String) -> Self {
+    pub fn new_in(
+        parent: Arc<Frame>,
+        origin: String,
+        function: String,
+        redirect_to_parent: bool,
+    ) -> Self {
         Frame {
             parent: Some(parent),
             variables: Mut::new(HashMap::new()),
@@ -195,6 +240,7 @@ impl Frame {
                 file: origin,
                 function,
             },
+            redirect_to_base: redirect_to_parent,
         }
     }
 
@@ -248,24 +294,43 @@ impl Frame {
         r
     }
 
+    pub fn readable_path(&self) -> String {
+        let mut item = String::new();
+        let path = self.path();
+        let mut file = "\0".to_owned();
+        for element in path {
+            if element.file != file {
+                item += " | in ";
+                item += &element.file;
+                item += ":";
+                file = element.file;
+            }
+            item += " ";
+            item += &element.function;
+        }
+        item
+    }
+
     pub fn is_dummy(&self) -> bool {
         self.parent.is_none() && self.origin.file == "\0" && self.origin.function == "\0"
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Stack {
     frames: Vec<Arc<Frame>>,
     object_stack: Vec<AMObject>,
+    pub return_accumultor: u32,
 }
 
 impl Display for Stack {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for frame in &self.frames {
-            f.write_str("Frame: ")?;
-            f.write_str(&frame.origin.file)?;
+            f.write_str("Frame:")?;
+            f.write_str(&frame.readable_path())?;
+            f.write_str("\n")?;
+            std::fmt::Display::fmt(&frame.as_ref(), f)?;
             f.write_str("\n\n")?;
-            frame.as_ref().fmt(f)?;
         }
         f.write_str("Stack: \n")?;
         for object in &self.object_stack {
@@ -289,10 +354,12 @@ impl Stack {
         let mut r = Stack {
             frames: vec![o.clone()],
             object_stack: Vec::new(),
+            return_accumultor: 0,
         };
 
         dyn_fns::register(&mut r, o.clone());
-        std_fns::register(&mut r, o);
+        std_fns::register(&mut r, o.clone());
+        stream::register(&mut r, o);
 
         r
     }
@@ -302,28 +369,35 @@ impl Stack {
         let mut r = Stack {
             frames: vec![o.clone()],
             object_stack: Vec::new(),
+            return_accumultor: 0,
         };
 
         dyn_fns::register(&mut r, o.clone());
-        std_fns::register(&mut r, o);
+        std_fns::register(&mut r, o.clone());
+        stream::register(&mut r, o);
 
         r
     }
 
     pub fn define_func(&mut self, name: String, func: AFunc) {
-        self.frames
-            .last_mut()
-            .unwrap()
-            .functions
-            .lock()
-            .insert(name, func);
+        let mut frame = self.frames.last().unwrap().clone();
+        if frame.redirect_to_base {
+            frame = self.frames.first().unwrap().clone();
+        }
+        frame.functions.lock().insert(name, func);
     }
 
     pub fn call(&mut self, func: &AFunc) -> OError {
-        let mut f = Frame::new(func.origin.clone(), func.name.clone());
-        if let Some(ref cname) = func.fname {
-            f.origin.file = cname.clone();
-        }
+        let f = if let Some(ref cname) = func.fname {
+            Frame::new_in(
+                func.origin.clone(),
+                cname.clone(),
+                func.name.clone(),
+                func.run_at_base,
+            )
+        } else {
+            Frame::new(func.origin.clone(), func.name.clone())
+        };
         self.frames.push(Arc::new(f));
         func.to_call.call(self)?;
         self.frames.pop().unwrap();
@@ -349,7 +423,10 @@ impl Stack {
     }
 
     pub fn define_var(&mut self, name: String) {
-        let frame = self.frames.last_mut().unwrap().clone();
+        let mut frame = self.frames.last().unwrap().clone();
+        if frame.redirect_to_base {
+            frame = self.frames.first().unwrap().clone();
+        }
         let tmpname = name.clone();
         let tmpframe = frame.clone();
         frame.functions.lock().insert(
@@ -361,6 +438,7 @@ impl Stack {
                     stack.push(tmpframe.get_var(tmpname.clone(), stack)?);
                     Ok(())
                 }))),
+                run_at_base: false,
                 fname: Some("RUNTIME".to_owned()),
                 name: name.clone(),
             }),
@@ -376,11 +454,25 @@ impl Stack {
                     let v = stack.pop();
                     tmpframe.set_var(tmpname.clone(), v, stack)
                 }))),
+                run_at_base: false,
                 fname: Some("RUNTIME".to_owned()),
                 name: "=".to_owned() + &name,
             }),
         );
         frame.variables.lock().insert(name, Value::Null.spl());
+    }
+
+    pub fn pop_until(&mut self, obj: AMObject) -> Vec<AMObject> {
+        let Some((idx, ..)) = self.object_stack.iter().enumerate().rfind(|o| *o.1.lock_ro() == *obj.lock_ro()) else {
+            return Vec::new()
+        };
+        let items = self.object_stack[idx + 1..].to_vec();
+        self.object_stack = self.object_stack[0..idx].to_vec();
+        items
+    }
+
+    pub fn len(&self) -> usize {
+        self.object_stack.len()
     }
 
     pub fn set_var(&self, name: String, obj: AMObject) -> OError {
@@ -435,22 +527,7 @@ impl Stack {
     pub fn trace(&self) -> Vec<String> {
         self.frames
             .iter()
-            .map(|frame| {
-                let mut item = String::new();
-                let path = frame.path();
-                let mut file = "\0".to_owned();
-                for element in path {
-                    if element.file != file {
-                        item += " | in ";
-                        item += &element.file;
-                        item += ":";
-                        file = element.file;
-                    }
-                    item += " ";
-                    item += &element.function;
-                }
-                item
-            })
+            .map(|frame| frame.readable_path())
             .collect()
     }
 
@@ -461,10 +538,16 @@ impl Stack {
             .clone()
     }
 
+    /// # Safety
+    /// This function is not technically unsafe. It is marked this way to indicate that it
+    /// can cause unstable runtime states and panics. However, memory safety is still guaranteed.
     pub unsafe fn pop_frame(&mut self, index: usize) -> Arc<Frame> {
         self.frames.remove(self.frames.len() - index - 1)
     }
 
+    /// # Safety
+    /// This function is not technically unsafe. It is marked this way to indicate that it
+    /// can cause unstable runtime states and panics. However, memory safety is still guaranteed.
     pub unsafe fn push_frame(&mut self, frame: Arc<Frame>) {
         self.frames.push(frame);
     }
@@ -576,7 +659,6 @@ pub struct Words {
 }
 
 #[derive(Clone)]
-#[allow(clippy::type_complexity)]
 pub enum FuncImpl {
     Native(fn(&mut Stack) -> OError),
     NativeDyn(Arc<Box<dyn Fn(&mut Stack) -> OError>>),
@@ -597,6 +679,7 @@ impl FuncImpl {
 pub struct Func {
     pub ret_count: u32,
     pub to_call: FuncImpl,
+    pub run_at_base: bool,
     pub origin: Arc<Frame>,
     pub fname: Option<String>,
     pub name: String,
@@ -653,6 +736,18 @@ impl Type {
         None
     }
 
+    pub fn write_into(&self, object: &mut Object) {
+        let mut to_apply = self.properties.clone();
+        let mut q = VecDeque::from(self.parents.clone());
+        while let Some(t) = q.pop_front() {
+            to_apply.append(&mut t.lock_ro().properties.clone());
+            q.append(&mut VecDeque::from(t.lock_ro().parents.clone()));
+        }
+        for property in to_apply.into_iter().rev() {
+            object.property_map.insert(property, Value::Null.spl());
+        }
+    }
+
     pub fn add_property(&mut self, name: String, origin: Arc<Frame>) -> OError {
         let tmpname = name.clone();
         self.functions.insert(
@@ -675,6 +770,7 @@ impl Type {
                     );
                     Ok(())
                 }))),
+                run_at_base: false,
                 origin: origin.clone(),
                 fname: Some("RUNTIME".to_owned()),
                 name: name.clone(),
@@ -691,6 +787,7 @@ impl Type {
                     o.lock().property_map.insert(tmpname.clone(), v);
                     Ok(())
                 }))),
+                run_at_base: false,
                 origin,
                 fname: Some("RUNTIME".to_owned()),
                 name: "=".to_owned() + &name,
@@ -732,11 +829,13 @@ impl Display for Object {
         f.write_str(&self.kind.lock_ro().name)?;
         f.write_str("(")?;
         self.native.fmt(f)?;
-        f.write_str(") { ")?;
+        f.write_str(") {")?;
         for (k, v) in &self.property_map {
+            f.write_str(" ")?;
             f.write_str(k)?;
             f.write_str(": ")?;
             std::fmt::Display::fmt(&v.lock_ro(), f)?;
+            f.write_str(",")?;
         }
         f.write_str(" }")?;
         Ok(())
@@ -745,22 +844,18 @@ impl Display for Object {
 
 impl Object {
     pub fn new(kind: AMType, native: Value) -> Object {
-        Object {
-            property_map: {
-                let mut map = HashMap::new();
-                for property in &kind.lock_ro().properties {
-                    map.insert(property.clone(), Value::Null.spl());
-                }
-                map
-            },
-            kind,
+        let mut r = Object {
+            property_map: HashMap::new(),
+            kind: kind.clone(),
             native,
-        }
+        };
+        kind.lock_ro().write_into(&mut r);
+        r
     }
 
     pub fn is_truthy(&self) -> bool {
         match &self.native {
-            Value::Null => false,
+            Value::Null => self.kind.lock_ro().id != 0,
             Value::Int(x) => x > &0,
             Value::Long(x) => x > &0,
             Value::Mega(x) => x > &0,
@@ -768,7 +863,7 @@ impl Object {
             Value::Double(_) => true,
             Value::Func(_) => true,
             Value::Array(_) => true,
-            Value::Str(x) => x.is_empty(),
+            Value::Str(x) => !x.is_empty(),
         }
     }
 }
@@ -820,6 +915,7 @@ impl Words {
                         Arc::new(Func {
                             ret_count: rem,
                             to_call: FuncImpl::SPL(words),
+                            run_at_base: false,
                             origin: stack.get_frame(),
                             fname: None,
                             name,
@@ -842,6 +938,7 @@ impl Words {
                                                 Arc::new(Func {
                                                     ret_count: v.0,
                                                     to_call: FuncImpl::SPL(v.1),
+                                                    run_at_base: false,
                                                     origin: origin.clone(),
                                                     fname: None,
                                                     name: name.clone() + ":" + &k,
@@ -861,12 +958,12 @@ impl Words {
                         let rstack = &stack;
                         runtime(move |rt| {
                             rt.get_type_by_name(tb.clone())
-                                .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb.clone())))?
+                                .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?
                                 .lock()
                                 .parents
                                 .push(
-                                    rt.get_type_by_name(ta)
-                                        .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?,
+                                    rt.get_type_by_name(ta.clone())
+                                        .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(ta)))?,
                                 );
                             Ok(())
                         })?;
@@ -877,6 +974,9 @@ impl Words {
                             break;
                         }
                         blk.exec(stack)?;
+                        if stack.return_accumultor > 0 {
+                            break;
+                        }
                     },
                     Keyword::If(blk) => {
                         if stack.pop().lock_ro().is_truthy() {
@@ -891,8 +991,16 @@ impl Words {
                         }
                     }
                 },
-                Word::Const(x) => stack.push(x.clone().ensure_init(stack).spl()),
+                Word::Const(x) => {
+                    if option_env!("SPLDEBUG").is_some() {
+                        println!("CNST({}) {x:?}", stack.len());
+                    }
+                    stack.push(x.clone().ensure_init(stack).spl())
+                }
                 Word::Call(x, rem, ra) => {
+                    if option_env!("SPLDEBUG").is_some() {
+                        println!("CALL({}) {x}", stack.len());
+                    }
                     let f = stack.get_func(x.clone())?;
                     if ra != 0 {
                         let mut f = Value::Func(f);
@@ -908,11 +1016,13 @@ impl Words {
                                     stack.push(ftmp.clone().spl());
                                     Ok(())
                                 }))),
+                                run_at_base: false,
                                 origin: stack.get_frame(),
                                 fname: None,
                                 name: s + &x,
                             }));
                         }
+                        stack.pop();
                         stack.push(f.spl());
                     } else {
                         stack.call(&f)?;
@@ -928,13 +1038,15 @@ impl Words {
                     let o = o.lock_ro();
                     let f0 = o.kind.lock_ro();
                     let f = f0
-                        .functions
-                        .get(&x)
+                        .get_fn(x.clone())
                         .ok_or_else(|| Error {
                             kind: ErrorKind::MethodNotFound(f0.name.clone(), x.clone()),
                             stack: stack.trace(),
                         })?
                         .clone();
+                    if option_env!("SPLDEBUG").is_some() {
+                        println!("CALL({}) {}:{x}", stack.len(), &o.kind.lock_ro().name);
+                    }
                     mem::drop(f0);
                     mem::drop(o);
                     if ra != 0 {
@@ -951,11 +1063,13 @@ impl Words {
                                     stack.push(ftmp.clone().spl());
                                     Ok(())
                                 }))),
+                                run_at_base: false,
                                 origin: stack.get_frame(),
                                 fname: None,
                                 name: s + &x,
                             }));
                         }
+                        stack.pop();
                         stack.push(f.spl())
                     } else {
                         stack.call(&f)?;
@@ -966,6 +1080,10 @@ impl Words {
                         }
                     }
                 }
+            }
+            if stack.return_accumultor > 0 {
+                stack.return_accumultor -= 1;
+                return Ok(());
             }
         }
         Ok(())
@@ -988,8 +1106,26 @@ pub enum ErrorKind {
     CustomObject(AMObject),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct Error {
     pub kind: ErrorKind,
     pub stack: Vec<String>,
+}
+
+impl Debug for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if panicking() {
+            f.write_str("\n\nSPL PANIC DUE TO UNCAUGHT ERROR:\n")?;
+            f.write_str(format!("Error: {:?}", self.kind).as_str())?;
+            f.write_str("\n")?;
+            f.write_str(self.stack.join("\n").as_str())?;
+            f.write_str("\n\n")?;
+            Ok(())
+        } else {
+            f.debug_struct("Error")
+                .field("kind", &self.kind)
+                .field("stack", &self.stack)
+                .finish()
+        }
+    }
 }

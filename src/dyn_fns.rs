@@ -198,6 +198,7 @@ pub fn dyn_read(stack: &mut Stack) -> OError {
                 kind: ErrorKind::LexError(format!("{x:?}")),
                 stack: stack.trace(),
             })?),
+            run_at_base: false,
             origin,
             fname: None,
             name: "(dyn-read)".to_owned(),
@@ -225,6 +226,7 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
                 kind: ErrorKind::LexError(format!("{x:?}")),
                 stack: stack.trace(),
             })?),
+            run_at_base: true,
             origin,
             fname: Some(n),
             name: "(dyn-read)".to_owned(),
@@ -258,6 +260,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
             AFunc::new(Func {
                 ret_count: f.2,
                 to_call: FuncImpl::Native(f.1),
+                run_at_base: false,
                 origin: o.clone(),
                 fname: None,
                 name: f.0.to_owned(),
