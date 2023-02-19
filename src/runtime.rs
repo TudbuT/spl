@@ -455,7 +455,10 @@ impl Stack {
     }
 
     pub fn peek_frame(&self, index: usize) -> Arc<Frame> {
-        self.frames.get(self.frames.len() - index - 1).unwrap().clone()
+        self.frames
+            .get(self.frames.len() - index - 1)
+            .unwrap()
+            .clone()
     }
 
     pub unsafe fn pop_frame(&mut self, index: usize) -> Arc<Frame> {
