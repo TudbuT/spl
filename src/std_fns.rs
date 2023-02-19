@@ -218,7 +218,7 @@ pub fn to_long(stack: &mut Stack) -> OError {
         Value::Long(match o {
             Value::Null => type_err!(stack, "null", "long"),
             Value::Int(x) => x as i64,
-            Value::Long(x) => x as i64,
+            Value::Long(x) => x,
             Value::Mega(x) => x as i64,
             Value::Float(x) => x as i64,
             Value::Double(x) => x as i64,
@@ -240,7 +240,7 @@ pub fn to_mega(stack: &mut Stack) -> OError {
             Value::Null => type_err!(stack, "null", "mega"),
             Value::Int(x) => x as i128,
             Value::Long(x) => x as i128,
-            Value::Mega(x) => x as i128,
+            Value::Mega(x) => x,
             Value::Float(x) => x as i128,
             Value::Double(x) => x as i128,
             Value::Func(_) => type_err!(stack, "func", "mega"),
@@ -262,7 +262,7 @@ pub fn to_float(stack: &mut Stack) -> OError {
             Value::Int(x) => x as f32,
             Value::Long(x) => x as f32,
             Value::Mega(x) => x as f32,
-            Value::Float(x) => x as f32,
+            Value::Float(x) => x,
             Value::Double(x) => x as f32,
             Value::Func(_) => type_err!(stack, "func", "float"),
             Value::Array(_) => type_err!(stack, "array", "float"),
@@ -284,7 +284,7 @@ pub fn to_double(stack: &mut Stack) -> OError {
             Value::Long(x) => x as f64,
             Value::Mega(x) => x as f64,
             Value::Float(x) => x as f64,
-            Value::Double(x) => x as f64,
+            Value::Double(x) => x,
             Value::Func(_) => type_err!(stack, "func", "double"),
             Value::Array(_) => type_err!(stack, "array", "double"),
             Value::Str(x) => x
@@ -373,7 +373,8 @@ pub fn exit(stack: &mut Stack) -> OError {
 }
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
-    let fns: [(&str, fn(&mut Stack) -> OError, u32); 28] = [
+    type Fn = fn(&mut Stack) -> OError;
+    let fns: [(&str, Fn, u32); 28] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),

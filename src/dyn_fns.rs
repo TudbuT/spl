@@ -141,14 +141,14 @@ pub fn dyn_call(stack: &mut Stack) -> OError {
     };
     let mut words = Vec::new();
     let mut ra = 0;
-    while s.starts_with("&") {
+    while s.starts_with('&') {
         ra += 1;
         s = s[1..].to_owned();
     }
-    if s.ends_with(";") {
+    if s.ends_with(';') {
         words.push(Word::Call(s[..s.len() - 1].to_owned(), true, ra));
     } else {
-        words.push(Word::Call(s.to_owned(), false, ra));
+        words.push(Word::Call(s, false, ra));
     }
     Words { words }.exec(stack)?;
     Ok(())
@@ -160,14 +160,14 @@ pub fn dyn_objcall(stack: &mut Stack) -> OError {
     };
     let mut words = Vec::new();
     let mut ra = 0;
-    while s.starts_with("&") {
+    while s.starts_with('&') {
         ra += 1;
         s = s[1..].to_owned();
     }
-    if s.ends_with(";") {
+    if s.ends_with(';') {
         words.push(Word::ObjCall(s[..s.len() - 1].to_owned(), true, ra));
     } else {
-        words.push(Word::ObjCall(s.to_owned(), false, ra));
+        words.push(Word::ObjCall(s, false, ra));
     }
     Words { words }.exec(stack)?;
     Ok(())
@@ -240,7 +240,8 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
 }
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
-    let fns: [(&str, fn(&mut Stack) -> OError, u32); 14] = [
+    type Fn = fn(&mut Stack) -> OError;
+    let fns: [(&str, Fn, u32); 14] = [
         ("dyn-__dump", dyn_dump, 0),
         ("dyn-def", dyn_def, 0),
         ("dyn-func", dyn_func, 0),

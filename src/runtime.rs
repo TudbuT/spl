@@ -31,6 +31,12 @@ pub struct Runtime {
     types_by_id: HashMap<u32, AMType>,
 }
 
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Runtime {
     pub fn new() -> Self {
         let mut rt = Runtime {
@@ -38,15 +44,15 @@ impl Runtime {
             types_by_name: HashMap::new(),
             types_by_id: HashMap::new(),
         };
-        let _ = rt.make_type("null".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("int".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("long".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("mega".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("float".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("double".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("func".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("array".to_owned(), |t| Ok(t)); // infallible
-        let _ = rt.make_type("str".to_owned(), |t| Ok(t)); // infallible
+        let _ = rt.make_type("null".to_owned(), Ok); // infallible
+        let _ = rt.make_type("int".to_owned(), Ok); // infallible
+        let _ = rt.make_type("long".to_owned(), Ok); // infallible
+        let _ = rt.make_type("mega".to_owned(), Ok); // infallible
+        let _ = rt.make_type("float".to_owned(), Ok); // infallible
+        let _ = rt.make_type("double".to_owned(), Ok); // infallible
+        let _ = rt.make_type("func".to_owned(), Ok); // infallible
+        let _ = rt.make_type("array".to_owned(), Ok); // infallible
+        let _ = rt.make_type("str".to_owned(), Ok); // infallible
         rt
     }
 
@@ -102,7 +108,7 @@ impl Display for Frame {
         f.write_str("\nVars: \n")?;
         for (name, object) in self.variables.lock_ro().iter() {
             f.write_str("  ")?;
-            f.write_str(&name)?;
+            f.write_str(name)?;
             f.write_str(": ")?;
             std::fmt::Display::fmt(&object.lock_ro(), f)?;
             f.write_str("\n")?;
@@ -201,6 +207,12 @@ impl Display for Stack {
     }
 }
 
+impl Default for Stack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Stack {
     pub fn new() -> Self {
         let o = Arc::new(Frame::root());
@@ -210,7 +222,7 @@ impl Stack {
         };
 
         dyn_fns::register(&mut r, o.clone());
-        std_fns::register(&mut r, o.clone());
+        std_fns::register(&mut r, o);
 
         r
     }
@@ -263,7 +275,7 @@ impl Stack {
                 ret_count: 1,
                 origin: frame.clone(),
                 to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
-                    stack.push(tmpframe.get_var(tmpname.clone(), &stack)?);
+                    stack.push(tmpframe.get_var(tmpname.clone(), stack)?);
                     Ok(())
                 }))),
                 cname: Some("RUNTIME".to_owned()),
@@ -271,14 +283,14 @@ impl Stack {
         );
         let tmpname = name.clone();
         let tmpframe = frame.clone();
-        frame.clone().functions.lock().insert(
+        frame.functions.lock().insert(
             "=".to_owned() + &name,
             Arc::new(Func {
                 ret_count: 0,
                 origin: frame.clone(),
                 to_call: FuncImpl::NativeDyn(Arc::new(Box::new(move |stack| {
                     let v = stack.pop();
-                    tmpframe.set_var(tmpname.clone(), v, &stack)
+                    tmpframe.set_var(tmpname.clone(), v, stack)
                 }))),
                 cname: Some("RUNTIME".to_owned()),
             }),
@@ -422,6 +434,7 @@ pub struct Words {
 }
 
 #[derive(Clone)]
+#[allow(clippy::type_complexity)]
 pub enum FuncImpl {
     Native(fn(&mut Stack) -> OError),
     NativeDyn(Arc<Box<dyn Fn(&mut Stack) -> OError>>),
@@ -574,7 +587,7 @@ impl Display for Object {
         self.native.fmt(f)?;
         f.write_str(") { ")?;
         for (k, v) in &self.property_map {
-            f.write_str(&k)?;
+            f.write_str(k)?;
             f.write_str(": ")?;
             std::fmt::Display::fmt(&v.lock_ro(), f)?;
         }
@@ -608,7 +621,7 @@ impl Object {
             Value::Double(_) => true,
             Value::Func(_) => true,
             Value::Array(_) => true,
-            Value::Str(x) => x == "",
+            Value::Str(x) => x.is_empty(),
         }
     }
 }
@@ -655,7 +668,7 @@ impl Words {
         for word in self.words.clone() {
             match word {
                 Word::Key(x) => match x {
-                    Keyword::Dump => println!("{}", stack),
+                    Keyword::Dump => println!("{stack}"),
                     Keyword::Def(x) => stack.define_var(x),
                     Keyword::Func(name, rem, words) => stack.define_func(
                         name,
@@ -708,12 +721,13 @@ impl Words {
                         RUNTIME.with(move |rt| {
                             let mut rt = rt.borrow_mut();
                             let rt = rt.as_mut().expect("no runtime (use .set())");
-                            Ok(
                             rt.get_type_by_name(tb.clone())
-                                .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb.clone())))?
-                                .lock()
-                                .parents
-                                .push(rt.get_type_by_name(ta).ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?))
+                            .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb.clone())))?
+                            .lock()
+                            .parents
+                            .push(rt.get_type_by_name(ta).ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?);
+                            Ok(
+                            ())
                         })?;
                     }
                     Keyword::While(cond, blk) => loop {

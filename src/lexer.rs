@@ -69,7 +69,7 @@ fn read_block(
                 }))))
             }
             "construct" => {
-                let name = (&str_words[i + 1]).to_owned();
+                let name = str_words[i + 1].to_owned();
                 assert_eq!(
                     str_words[i + 2],
                     "{",
@@ -78,7 +78,7 @@ fn read_block(
                 let mut fields = Vec::new();
                 i += 3;
                 while str_words[i] != ";" && str_words[i] != "}" {
-                    fields.push((&str_words[i]).to_owned());
+                    fields.push(str_words[i].to_owned());
                     i += 1;
                 }
                 let mut methods = Vec::new();
@@ -86,7 +86,7 @@ fn read_block(
                 if str_words[i] == ";" {
                     i += 1;
                     while str_words[i] != "}" {
-                        let name = (&str_words[i]).to_owned();
+                        let name = str_words[i].to_owned();
                         if name == "construct" {
                             has_construct = true;
                         }
@@ -137,7 +137,7 @@ fn read_block(
                 let mut vars = Vec::new();
                 i += 1;
                 while &str_words[i] != ";" {
-                    vars.push((&str_words[i]).to_owned());
+                    vars.push(str_words[i].to_owned());
                     i += 1;
                 }
                 words.push(Word::Key(Keyword::With(vars)));
@@ -145,37 +145,37 @@ fn read_block(
             "}" => {
                 break;
             }
-            x if x.starts_with("\"") => {
+            x if x.starts_with('\"') => {
                 words.push(Word::Const(Value::Str(x[1..].to_owned())));
             }
-            x if x.chars().all(|c| c.is_numeric() || c == '_') && !x.starts_with("_") => {
+            x if x.chars().all(|c| c.is_numeric() || c == '_') && !x.starts_with('_') => {
                 words.push(Word::Const(Value::Mega(x.parse().unwrap())));
             }
             x if x.chars().all(|c| c.is_numeric() || c == '.' || c == '_')
-                && !x.starts_with("_") =>
+                && !x.starts_with('_') =>
             {
                 words.push(Word::Const(Value::Double(x.parse().unwrap())));
             }
             x => {
-                let mut word = x.split(":").next().unwrap();
+                let mut word = x.split(':').next().unwrap();
                 let mut ra = 0;
-                while word.starts_with("&") {
+                while word.starts_with('&') {
                     ra += 1;
                     word = &word[1..];
                 }
-                if word.ends_with(";") {
-                    words.push(Word::Call(word[..word.len() - 1].to_owned(), true, ra));
+                if let Some(word) = word.strip_suffix(';') {
+                    words.push(Word::Call(word.to_owned(), true, ra));
                 } else {
                     words.push(Word::Call(word.to_owned(), false, ra));
                 }
-                for mut word in x.split(":").skip(1) {
+                for mut word in x.split(':').skip(1) {
                     let mut ra = 0;
-                    while word.starts_with("&") {
+                    while word.starts_with('&') {
                         ra += 1;
                         word = &word[1..];
                     }
-                    if word.ends_with(";") {
-                        words.push(Word::ObjCall(word[..word.len() - 1].to_owned(), true, ra));
+                    if let Some(word) = word.strip_suffix(';') {
+                        words.push(Word::ObjCall(word.to_owned(), true, ra));
                     } else {
                         words.push(Word::ObjCall(word.to_owned(), false, ra));
                     }
@@ -234,7 +234,7 @@ fn parse_line(line: &str) -> Vec<String> {
                 continue;
             }
             if c == ' ' {
-                if s == "" {
+                if s.is_empty() {
                     continue;
                 }
                 words.push(s);
@@ -246,7 +246,7 @@ fn parse_line(line: &str) -> Vec<String> {
         was_in_string = false;
         s += String::from(c).as_str();
     }
-    if s != "" {
+    if !s.is_empty() {
         words.push(s);
     }
     words
