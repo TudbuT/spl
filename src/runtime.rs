@@ -3,6 +3,7 @@ use crate::{dyn_fns, mutex::*, std_fns};
 use core::panic;
 use std::collections::VecDeque;
 use std::mem;
+use std::sync::RwLockWriteGuard;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -17,11 +18,16 @@ pub type AFunc = Arc<Func>;
 pub type OError = Result<(), Error>;
 
 thread_local! {
-    static RUNTIME: RefCell<Option<Runtime>> = RefCell::new(None);
+    static RUNTIME: RefCell<Option<Arc<Mut<Runtime>>>> = RefCell::new(None);
 }
 
-pub fn runtime<T>(f: impl FnOnce(&mut Runtime) -> T) -> T {
-    RUNTIME.with(|rt| f(rt.borrow_mut().as_mut().unwrap()))
+pub fn runtime<T>(f: impl FnOnce(RwLockWriteGuard<Runtime>) -> T) -> T {
+    RUNTIME.with(|rt| {
+        f(rt.borrow_mut()
+            .as_mut()
+            .expect("no runtime (use .set())")
+            .lock())
+    })
 }
 
 #[derive(Clone)]
@@ -68,7 +74,11 @@ impl Runtime {
         self.types_by_id.clone().into_values().collect()
     }
 
-    pub fn make_type(&mut self, name: String, op: impl FnOnce(Type) -> Result<Type, Error>) -> Result<AMType, Error> {
+    pub fn make_type(
+        &mut self,
+        name: String,
+        op: impl FnOnce(Type) -> Result<Type, Error>,
+    ) -> Result<AMType, Error> {
         let t = Arc::new(Mut::new(op(Type {
             name: name.clone(),
             id: (self.next_type_id, self.next_type_id += 1).0,
@@ -81,18 +91,31 @@ impl Runtime {
         Ok(t)
     }
 
-    pub fn set(self) {
-        RUNTIME.with(move |x| *x.borrow_mut() = Some(self));
-    }
-
     pub fn reset() {
         RUNTIME.with(|x| *x.borrow_mut() = None);
+    }
+}
+
+pub trait SetRuntime {
+    fn set(self);
+}
+
+impl SetRuntime for Runtime {
+    fn set(self) {
+        Arc::new(Mut::new(self)).set()
+    }
+}
+
+impl SetRuntime for Arc<Mut<Runtime>> {
+    fn set(self) {
+        RUNTIME.with(move |x| *x.borrow_mut() = Some(self));
     }
 }
 
 #[derive(Clone)]
 pub struct FrameInfo {
     pub file: String,
+    pub function: String,
 }
 
 #[derive(Clone)]
@@ -118,32 +141,60 @@ impl Display for Frame {
 }
 
 impl Frame {
-    fn root() -> Self {
+    pub fn dummy() -> Self {
+        Frame {
+            parent: None,
+            variables: Mut::new(HashMap::new()),
+            functions: Mut::new(HashMap::new()),
+            origin: FrameInfo {
+                file: "\0".to_owned(),
+                function: "\0".to_owned(),
+            },
+        }
+    }
+
+    pub fn root() -> Self {
         Frame {
             parent: None,
             variables: Mut::new(HashMap::new()),
             functions: Mut::new(HashMap::new()),
             origin: FrameInfo {
                 file: "RUNTIME".to_owned(),
+                function: "root".to_owned(),
             },
         }
     }
 
-    pub fn new(parent: Arc<Frame>) -> Self {
+    pub fn root_in(info: FrameInfo) -> Self {
+        Frame {
+            parent: None,
+            variables: Mut::new(HashMap::new()),
+            functions: Mut::new(HashMap::new()),
+            origin: info,
+        }
+    }
+
+    pub fn new(parent: Arc<Frame>, function: String) -> Self {
         Frame {
             variables: Mut::new(HashMap::new()),
             functions: Mut::new(HashMap::new()),
-            origin: parent.origin.clone(),
+            origin: FrameInfo {
+                function,
+                ..parent.origin.clone()
+            },
             parent: Some(parent),
         }
     }
 
-    pub fn new_in(parent: Arc<Frame>, origin: String) -> Self {
+    pub fn new_in(parent: Arc<Frame>, origin: String, function: String) -> Self {
         Frame {
             parent: Some(parent),
             variables: Mut::new(HashMap::new()),
             functions: Mut::new(HashMap::new()),
-            origin: FrameInfo { file: origin },
+            origin: FrameInfo {
+                file: origin,
+                function,
+            },
         }
     }
 
@@ -180,6 +231,25 @@ impl Frame {
                 });
             }
         }
+    }
+
+    pub fn path(&self) -> Vec<FrameInfo> {
+        let mut r = Vec::new();
+        let mut frame = self;
+        loop {
+            r.insert(0, frame.origin.clone());
+
+            if let Some(ref parent) = frame.parent {
+                frame = parent;
+            } else {
+                break;
+            }
+        }
+        r
+    }
+
+    pub fn is_dummy(&self) -> bool {
+        self.parent.is_none() && self.origin.file == "\0" && self.origin.function == "\0"
     }
 }
 
@@ -227,6 +297,19 @@ impl Stack {
         r
     }
 
+    pub fn new_in(frame_info: FrameInfo) -> Self {
+        let o = Arc::new(Frame::root_in(frame_info));
+        let mut r = Stack {
+            frames: vec![o.clone()],
+            object_stack: Vec::new(),
+        };
+
+        dyn_fns::register(&mut r, o.clone());
+        std_fns::register(&mut r, o);
+
+        r
+    }
+
     pub fn define_func(&mut self, name: String, func: AFunc) {
         self.frames
             .last_mut()
@@ -237,8 +320,8 @@ impl Stack {
     }
 
     pub fn call(&mut self, func: &AFunc) -> OError {
-        let mut f = Frame::new(func.origin.clone());
-        if let Some(ref cname) = func.cname {
+        let mut f = Frame::new(func.origin.clone(), func.name.clone());
+        if let Some(ref cname) = func.fname {
             f.origin.file = cname.clone();
         }
         self.frames.push(Arc::new(f));
@@ -278,7 +361,8 @@ impl Stack {
                     stack.push(tmpframe.get_var(tmpname.clone(), stack)?);
                     Ok(())
                 }))),
-                cname: Some("RUNTIME".to_owned()),
+                fname: Some("RUNTIME".to_owned()),
+                name: name.clone(),
             }),
         );
         let tmpname = name.clone();
@@ -292,7 +376,8 @@ impl Stack {
                     let v = stack.pop();
                     tmpframe.set_var(tmpname.clone(), v, stack)
                 }))),
-                cname: Some("RUNTIME".to_owned()),
+                fname: Some("RUNTIME".to_owned()),
+                name: "=".to_owned() + &name,
             }),
         );
         frame.variables.lock().insert(name, Value::Null.spl());
@@ -343,8 +428,42 @@ impl Stack {
         }
     }
 
+    pub fn mr_trace(&self) -> Vec<Vec<FrameInfo>> {
+        self.frames.iter().map(|frame| frame.path()).collect()
+    }
+
     pub fn trace(&self) -> Vec<String> {
-        todo!()
+        self.frames
+            .iter()
+            .map(|frame| {
+                let mut item = String::new();
+                let path = frame.path();
+                let mut file = "\0".to_owned();
+                for element in path {
+                    if element.file != file {
+                        item += " | in ";
+                        item += &element.file;
+                        item += ":";
+                        file = element.file;
+                    }
+                    item += " ";
+                    item += &element.function;
+                }
+                item
+            })
+            .collect()
+    }
+
+    pub fn peek_frame(&self, index: usize) -> Arc<Frame> {
+        self.frames.get(self.frames.len() - index - 1).unwrap().clone()
+    }
+
+    pub unsafe fn pop_frame(&mut self, index: usize) -> Arc<Frame> {
+        self.frames.remove(self.frames.len() - index - 1)
+    }
+
+    pub unsafe fn push_frame(&mut self, frame: Arc<Frame>) {
+        self.frames.push(frame);
     }
 }
 
@@ -411,6 +530,26 @@ pub enum Value {
     Str(String),
 }
 
+impl Value {
+    fn ensure_init(self, stack: &Stack) -> Self {
+        match self {
+            Value::Func(x) if x.origin.is_dummy() => Value::Func(AFunc::new(Func {
+                origin: stack.get_frame(),
+                ..x.as_ref().clone()
+            })),
+            x => x,
+        }
+    }
+
+    pub fn try_mega_to_int(self) -> Value {
+        if let Value::Mega(x) = self {
+            Value::Int(x as i32)
+        } else {
+            self
+        }
+    }
+}
+
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self, other) {
@@ -456,7 +595,8 @@ pub struct Func {
     pub ret_count: u32,
     pub to_call: FuncImpl,
     pub origin: Arc<Frame>,
-    pub cname: Option<String>,
+    pub fname: Option<String>,
+    pub name: String,
 }
 
 impl PartialEq for Func {
@@ -533,7 +673,8 @@ impl Type {
                     Ok(())
                 }))),
                 origin: origin.clone(),
-                cname: Some("RUNTIME".to_owned()),
+                fname: Some("RUNTIME".to_owned()),
+                name: name.clone(),
             }),
         );
         let tmpname = name.clone();
@@ -548,7 +689,8 @@ impl Type {
                     Ok(())
                 }))),
                 origin,
-                cname: Some("RUNTIME".to_owned()),
+                fname: Some("RUNTIME".to_owned()),
+                name: "=".to_owned() + &name,
             }),
         );
         self.properties.push(name);
@@ -579,6 +721,8 @@ impl PartialOrd for Object {
         self.native.partial_cmp(&other.native)
     }
 }
+
+impl Eq for Object {}
 
 impl Display for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -629,9 +773,7 @@ impl Object {
 impl From<Value> for Object {
     fn from(value: Value) -> Self {
         Object::new(
-            RUNTIME.with(|x| {
-                let x = x.borrow();
-                let x = x.as_ref().expect("no runtime (use .set())");
+            runtime(|x| {
                 match value {
                     Value::Null => x.get_type_by_id(0),
                     Value::Int(_) => x.get_type_by_id(1),
@@ -671,12 +813,13 @@ impl Words {
                     Keyword::Dump => println!("{stack}"),
                     Keyword::Def(x) => stack.define_var(x),
                     Keyword::Func(name, rem, words) => stack.define_func(
-                        name,
+                        name.clone(),
                         Arc::new(Func {
                             ret_count: rem,
                             to_call: FuncImpl::SPL(words),
                             origin: stack.get_frame(),
-                            cname: None,
+                            fname: None,
+                            name,
                         }),
                     ),
                     Keyword::Construct(name, fields, methods) => {
@@ -685,49 +828,44 @@ impl Words {
                         stack.set_var(
                             name.clone(),
                             Value::Str(
-                                RUNTIME
-                                    .with(move |rt| {
-                                        rt.borrow_mut().as_mut().expect("no runtime (use .set)").make_type(
-                                            name,
-                                            move |mut t| {
-                                                for field in fields {
-                                                    t.add_property(field, origin.clone())?;
-                                                }
-                                                t.functions.extend(methods.into_iter().map(
-                                                    |(k, v)| {
-                                                        (
-                                                            k,
-                                                            Arc::new(Func {
-                                                                ret_count: v.0,
-                                                                to_call: FuncImpl::SPL(v.1),
-                                                                origin: origin.clone(),
-                                                                cname: None,
-                                                            }),
-                                                        )
-                                                    },
-                                                ));
-                                                Ok(t)
-                                            },
-                                        )
-                                    })?
-                                    .lock_ro()
-                                    .get_name(),
+                                runtime(move |mut rt| {
+                                    rt.make_type(name.clone(), move |mut t| {
+                                        for field in fields {
+                                            t.add_property(field, origin.clone())?;
+                                        }
+                                        t.functions.extend(methods.into_iter().map(|(k, v)| {
+                                            (
+                                                k.clone(),
+                                                Arc::new(Func {
+                                                    ret_count: v.0,
+                                                    to_call: FuncImpl::SPL(v.1),
+                                                    origin: origin.clone(),
+                                                    fname: None,
+                                                    name: name.clone() + ":" + &k,
+                                                }),
+                                            )
+                                        }));
+                                        Ok(t)
+                                    })
+                                })?
+                                .lock_ro()
+                                .get_name(),
                             )
                             .spl(),
                         )?;
                     }
                     Keyword::Include(ta, tb) => {
                         let rstack = &stack;
-                        RUNTIME.with(move |rt| {
-                            let mut rt = rt.borrow_mut();
-                            let rt = rt.as_mut().expect("no runtime (use .set())");
+                        runtime(move |rt| {
                             rt.get_type_by_name(tb.clone())
-                            .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb.clone())))?
-                            .lock()
-                            .parents
-                            .push(rt.get_type_by_name(ta).ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?);
-                            Ok(
-                            ())
+                                .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb.clone())))?
+                                .lock()
+                                .parents
+                                .push(
+                                    rt.get_type_by_name(ta)
+                                        .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?,
+                                );
+                            Ok(())
                         })?;
                     }
                     Keyword::While(cond, blk) => loop {
@@ -750,12 +888,16 @@ impl Words {
                         }
                     }
                 },
-                Word::Const(x) => stack.push(x.clone().spl()),
+                Word::Const(x) => stack.push(x.clone().ensure_init(stack).spl()),
                 Word::Call(x, rem, ra) => {
-                    let f = stack.get_func(x)?;
+                    let f = stack.get_func(x.clone())?;
                     if ra != 0 {
                         let mut f = Value::Func(f);
-                        for _ in 1..ra {
+                        for n in 1..ra {
+                            let mut s = String::new();
+                            for _ in 0..n {
+                                s += "&";
+                            }
                             let ftmp = f;
                             f = Value::Func(AFunc::new(Func {
                                 ret_count: 1,
@@ -764,9 +906,11 @@ impl Words {
                                     Ok(())
                                 }))),
                                 origin: stack.get_frame(),
-                                cname: None,
+                                fname: None,
+                                name: s + &x,
                             }));
                         }
+                        stack.push(f.spl());
                     } else {
                         stack.call(&f)?;
                         if rem {
@@ -784,7 +928,7 @@ impl Words {
                         .functions
                         .get(&x)
                         .ok_or_else(|| Error {
-                            kind: ErrorKind::MethodNotFound(f0.name.clone(), x),
+                            kind: ErrorKind::MethodNotFound(f0.name.clone(), x.clone()),
                             stack: stack.trace(),
                         })?
                         .clone();
@@ -792,7 +936,11 @@ impl Words {
                     mem::drop(o);
                     if ra != 0 {
                         let mut f = Value::Func(f.clone());
-                        for _ in 1..ra {
+                        for n in 1..ra {
+                            let mut s = String::new();
+                            for _ in 0..n {
+                                s += "&";
+                            }
                             let ftmp = f;
                             f = Value::Func(AFunc::new(Func {
                                 ret_count: 1,
@@ -801,9 +949,11 @@ impl Words {
                                     Ok(())
                                 }))),
                                 origin: stack.get_frame(),
-                                cname: None,
+                                fname: None,
+                                name: s + &x,
                             }));
                         }
+                        stack.push(f.spl())
                     } else {
                         stack.call(&f)?;
                         if rem {
@@ -830,6 +980,9 @@ pub enum ErrorKind {
     PropertyNotFound(String, String),
     TypeNotFound(String),
     LexError(String),
+    IO(String),
+    Custom(String),
+    CustomObject(AMObject),
 }
 
 #[derive(Debug, PartialEq, Eq)]

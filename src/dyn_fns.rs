@@ -188,24 +188,19 @@ pub fn dyn_all_types(stack: &mut Stack) -> OError {
 
 pub fn dyn_read(stack: &mut Stack) -> OError {
     let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
-        return stack.err(ErrorKind::InvalidCall("dyn-call".to_owned()))
+        return stack.err(ErrorKind::InvalidCall("dyn-read".to_owned()))
     };
+    let origin = stack.peek_frame(1);
     stack.push(
         Value::Func(AFunc::new(Func {
             ret_count: 0,
-            to_call: FuncImpl::SPL(
-                lexer::lex(
-                    s,
-                    "dyn-read@".to_owned() + &stack.get_origin().file,
-                    stack.get_frame(),
-                )
-                .map_err(|x| Error {
-                    kind: ErrorKind::LexError(format!("{x:?}")),
-                    stack: stack.trace(),
-                })?,
-            ),
-            origin: stack.get_frame(),
-            cname: None,
+            to_call: FuncImpl::SPL(lexer::lex(s).map_err(|x| Error {
+                kind: ErrorKind::LexError(format!("{x:?}")),
+                stack: stack.trace(),
+            })?),
+            origin,
+            fname: None,
+            name: "(dyn-read)".to_owned(),
         }))
         .spl(),
     );
@@ -214,25 +209,25 @@ pub fn dyn_read(stack: &mut Stack) -> OError {
 
 pub fn dyn_readf(stack: &mut Stack) -> OError {
     let (
-        Value::Str(n),
         Value::Str(s),
+        Value::Str(n),
     ) = (
         stack.pop().lock_ro().native.clone(),
         stack.pop().lock_ro().native.clone(),
     ) else {
-        return stack.err(ErrorKind::InvalidCall("dyn-call".to_owned()))
+        return stack.err(ErrorKind::InvalidCall("dyn-readf".to_owned()))
     };
+    let origin = stack.peek_frame(1);
     stack.push(
         Value::Func(AFunc::new(Func {
             ret_count: 0,
-            to_call: FuncImpl::SPL(lexer::lex(s, n.clone(), stack.get_frame()).map_err(|x| {
-                Error {
-                    kind: ErrorKind::LexError(format!("{x:?}")),
-                    stack: stack.trace(),
-                }
+            to_call: FuncImpl::SPL(lexer::lex(s).map_err(|x| Error {
+                kind: ErrorKind::LexError(format!("{x:?}")),
+                stack: stack.trace(),
             })?),
-            origin: stack.get_frame(),
-            cname: Some(n),
+            origin,
+            fname: Some(n),
+            name: "(dyn-read)".to_owned(),
         }))
         .spl(),
     );
@@ -264,7 +259,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
                 ret_count: f.2,
                 to_call: FuncImpl::Native(f.1),
                 origin: o.clone(),
-                cname: None,
+                fname: None,
+                name: f.0.to_owned(),
             }),
         );
     }

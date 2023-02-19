@@ -1,41 +1,43 @@
 use spl::{lexer::lex, runtime::*};
 
-use std::{fs, vec};
+use std::{fs, env::args};
 
 fn main() -> OError {
     let rt = Runtime::new();
-    let mut stack = Stack::new();
     rt.set();
-    Words {
-        words: vec![
-            Word::Key(Keyword::Func(
-                "println".to_owned(),
-                0,
-                Words {
-                    words: vec![
-                        Word::Call("print".to_owned(), true, 0),
-                        Word::Const(Value::Str("\n".to_owned())),
-                        Word::Call("print".to_owned(), true, 0),
-                    ],
-                },
-            )),
-            Word::Key(Keyword::Def("helloworld".to_owned())),
-            Word::Const(Value::Str("Hello, World".to_owned())),
-            Word::Call("=helloworld".to_owned(), false, 0),
-            Word::Call("helloworld".to_owned(), false, 0),
-            Word::Call("println".to_owned(), true, 0),
-        ],
+    let mut stack = Stack::new_in(FrameInfo {
+        file: "std.spl".to_owned(),
+        function: "root".to_owned(),
+    });
+    fn argv(stack: &mut Stack) -> OError {
+        stack.push(Value::Array(args().into_iter().map(|x| Value::Str(x).spl()).collect()).spl());
+        Ok(())
     }
-    .exec(&mut stack)?;
-    let words = lex(
-        fs::read_to_string("test.spl").unwrap(),
-        "test.spl".to_owned(),
-        stack.get_frame(),
-    ).map_err(|x| Error {
+    fn read_file(stack: &mut Stack) -> OError {
+        let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
+            return stack.err(ErrorKind::InvalidCall("read_file".to_owned()))
+        };
+        stack.push(Value::Str(fs::read_to_string(s).map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?).spl());
+        Ok(())
+    }
+    stack.define_func("argv".to_owned(), AFunc::new(Func {
+        ret_count: 1,
+        to_call: FuncImpl::Native(argv),
+        origin: stack.get_frame(),
+        fname: None,
+        name: "argv".to_owned(),
+    }));
+    stack.define_func("read-file".to_owned(), AFunc::new(Func {
+        ret_count: 1,
+        to_call: FuncImpl::Native(read_file),
+        origin: stack.get_frame(),
+        fname: None,
+        name: "read-file".to_owned(),
+    }));
+    let words = lex(fs::read_to_string("std.spl").unwrap()).map_err(|x| Error {
         kind: ErrorKind::LexError(format!("{x:?}")),
         stack: Vec::new(),
     })?;
-    println!("{words:#?}");
     words.exec(&mut stack)?;
     Runtime::reset();
     Ok(())

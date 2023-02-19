@@ -365,22 +365,75 @@ pub fn call(stack: &mut Stack) -> OError {
     stack.call(&a)
 }
 
+pub fn trace(stack: &mut Stack) -> OError {
+    let trace = stack.trace();
+    stack.push(Value::Array(trace.into_iter().map(|x| Value::Str(x).spl()).collect()).spl());
+    Ok(())
+}
+
+pub fn mr_trace(stack: &mut Stack) -> OError {
+    let trace = stack.mr_trace();
+    let kind = runtime(|rt| rt.get_type_by_name("TraceElement".to_owned()))
+        .ok_or_else(|| stack.error(ErrorKind::TypeNotFound("TraceElement".to_owned())))?;
+    stack.push(
+        Value::Array(
+            trace
+                .into_iter()
+                .map(|x| {
+                    Value::Array(
+                        x.into_iter()
+                            .map(|x| {
+                                let item = Value::Null.spl();
+                                let mut obj = item.lock();
+                                for property in &kind.lock_ro().properties {
+                                    obj.property_map.insert(property.clone(), Value::Null.spl());
+                                }
+                                obj.kind = kind.clone();
+                                obj.property_map
+                                    .insert("file".to_owned(), Value::Str(x.file).spl());
+                                obj.property_map
+                                    .insert("function".to_owned(), Value::Str(x.function).spl());
+                                mem::drop(obj);
+                                item
+                            })
+                            .collect(),
+                    )
+                    .spl()
+                })
+                .collect(),
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
 pub fn exit(stack: &mut Stack) -> OError {
-    let Value::Int(a) = stack.pop().lock_ro().native.clone() else {
+    let Value::Int(a) = stack.pop().lock_ro().native.clone().try_mega_to_int() else {
         return stack.err(ErrorKind::InvalidCall("exit".to_owned()))
     };
     process::exit(a)
 }
 
+pub fn exec(stack: &mut Stack) -> OError {
+    let Value::Func(a) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("exec".to_owned()))
+    };
+    unsafe {
+        let f = stack.pop_frame(0);
+        a.to_call.call(stack)?;
+        stack.push_frame(f);
+    }
+    Ok(())
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 28] = [
+    let fns: [(&str, Fn, u32); 31] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
         ("swap", swap, 2),
         ("print", print, 0),
-        ("call", call, 0),
         ("gettype", gettype, 1),
         ("settype", settype, 1),
         ("anew", array_new, 1),
@@ -402,7 +455,11 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("_double", to_double, 1),
         ("_array", to_array, 1),
         ("_str", to_str, 1),
+        ("call", call, 0),
+        ("trace", trace, 1),
+        ("mr-trace", mr_trace, 1),
         ("exit", exit, 0),
+        ("exec", exec, 0),
     ];
     for f in fns {
         r.define_func(
@@ -411,7 +468,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
                 ret_count: f.2,
                 to_call: FuncImpl::Native(f.1),
                 origin: o.clone(),
-                cname: None,
+                fname: None,
+                name: f.0.to_owned(),
             }),
         );
     }

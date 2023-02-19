@@ -4,26 +4,23 @@ use crate::runtime::*;
 use readformat::*;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LexerError {}
+pub enum LexerError {
+    FunctionBlockExpected,
+    WrongFunctionDeclaration,
+    InvalidInclude,
+    InvalidConstructBlock,
+    InvalidNumber(String),
+}
 
-pub fn lex(input: String, filename: String, frame: Arc<Frame>) -> Result<Words, LexerError> {
+pub fn lex(input: String) -> Result<Words, LexerError> {
     let mut str_words = Vec::new();
     for line in input.split('\n') {
         str_words.append(&mut parse_line(line));
     }
-    Ok(read_block(
-        &str_words[..],
-        false,
-        Arc::new(Frame::new_in(frame, filename)),
-    )?
-    .1)
+    Ok(read_block(&str_words[..], false)?.1)
 }
 
-fn read_block(
-    str_words: &[String],
-    isfn: bool,
-    origin: Arc<Frame>,
-) -> Result<(Option<u32>, Words, usize), LexerError> {
+fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, usize), LexerError> {
     let mut rem = None;
     let mut words = Vec::new();
     let mut i = 0;
@@ -43,38 +40,32 @@ fn read_block(
                 i += 1;
             }
             "func" => {
-                if let Some(dat) = readf("func\0{}\0{", str_words[i..=i + 2].join("\0").as_str()) {
-                    let block = read_block(
-                        &str_words[i + 2..],
-                        true,
-                        Arc::new(Frame::new(origin.clone())),
-                    )?;
+                if let Some(dat) = readf1("func\0{}\0{", str_words[i..=i + 2].join("\0").as_str()) {
+                    let block = read_block(&str_words[i + 2..], true)?;
                     i += 2 + block.2;
                     words.push(Word::Key(Keyword::Func(
-                        dat[0].to_owned(),
-                        block.0.expect("LEXERR: Expected `{ <type> <...> |`."),
+                        dat.to_owned(),
+                        block.0.ok_or(LexerError::FunctionBlockExpected)?,
                         block.1,
                     )));
                 }
             }
             "{" => {
-                let block =
-                    read_block(&str_words[i..], true, Arc::new(Frame::new(origin.clone())))?;
+                let block = read_block(&str_words[i..], true)?;
                 i += block.2;
                 words.push(Word::Const(Value::Func(AFunc::new(Func {
-                    ret_count: block.0.expect("LEXERR: Expected `{ <type> <...> |`."),
+                    ret_count: block.0.ok_or(LexerError::FunctionBlockExpected)?,
                     to_call: FuncImpl::SPL(block.1),
-                    origin: origin.to_owned(),
-                    cname: None,
+                    origin: Arc::new(Frame::dummy()),
+                    fname: None,
+                    name: "dyn".to_owned(),
                 }))))
             }
             "construct" => {
                 let name = str_words[i + 1].to_owned();
-                assert_eq!(
-                    str_words[i + 2],
-                    "{",
-                    "LEXERR: Expected `construct <name> {{`, got `construct <name>`"
-                );
+                if str_words[i + 2] != "{" {
+                    return Err(LexerError::InvalidConstructBlock);
+                }
                 let mut fields = Vec::new();
                 i += 3;
                 while str_words[i] != ";" && str_words[i] != "}" {
@@ -90,14 +81,11 @@ fn read_block(
                         if name == "construct" {
                             has_construct = true;
                         }
-                        let block = read_block(&str_words[i + 1..], true, origin.clone())?;
+                        let block = read_block(&str_words[i + 1..], true)?;
                         i += 1 + block.2;
                         methods.push((
                             name,
-                            (
-                                block.0.expect("LEXERR: Expected `{ <type> <...> |`."),
-                                block.1,
-                            ),
+                            (block.0.ok_or(LexerError::FunctionBlockExpected)?, block.1),
                         ));
                         i += 1;
                     }
@@ -117,19 +105,19 @@ fn read_block(
                         x[1].to_owned(),
                     )))
                 } else {
-                    panic!("LEXERR: Expected `include <typeA> in <typeB>`.");
+                    return Err(LexerError::InvalidInclude);
                 }
                 i += 3;
             }
             "while" => {
-                let cond = read_block(&str_words[i + 2..], false, origin.clone())?;
+                let cond = read_block(&str_words[i + 2..], false)?;
                 i += 2 + cond.2;
-                let blk = read_block(&str_words[i + 2..], false, origin.clone())?;
+                let blk = read_block(&str_words[i + 2..], false)?;
                 i += 2 + blk.2;
                 words.push(Word::Key(Keyword::While(cond.1, blk.1)));
             }
             "if" => {
-                let blk = read_block(&str_words[i + 2..], false, origin.clone())?;
+                let blk = read_block(&str_words[i + 2..], false)?;
                 i += 2 + blk.2;
                 words.push(Word::Key(Keyword::If(blk.1)));
             }
@@ -149,15 +137,24 @@ fn read_block(
                 words.push(Word::Const(Value::Str(x[1..].to_owned())));
             }
             x if x.chars().all(|c| c.is_numeric() || c == '_') && !x.starts_with('_') => {
-                words.push(Word::Const(Value::Mega(x.parse().unwrap())));
+                words.push(Word::Const(Value::Mega(
+                    x.parse()
+                        .map_err(|_| LexerError::InvalidNumber(x.to_owned()))?,
+                )));
             }
             x if x.chars().all(|c| c.is_numeric() || c == '.' || c == '_')
                 && !x.starts_with('_') =>
             {
-                words.push(Word::Const(Value::Double(x.parse().unwrap())));
+                words.push(Word::Const(Value::Double(
+                    x.parse()
+                        .map_err(|_| LexerError::InvalidNumber(x.to_owned()))?,
+                )));
             }
             x => {
-                let mut word = x.split(':').next().unwrap();
+                let mut word = x
+                    .split(':')
+                    .next()
+                    .expect("unreachable (empty words are filtered by the parser)");
                 let mut ra = 0;
                 while word.starts_with('&') {
                     ra += 1;
