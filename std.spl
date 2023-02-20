@@ -397,6 +397,7 @@ func panic { | with msg ;
             "Type 'Yes^M' to dump. You can set SPL_PANIC_DUMP to always dump "
             "on panic, or SPL_PLAIN_PANIC to never dump." concat println
             readln "Yes" eq if {
+                null =map
                 dyn-__dump
             }
         }

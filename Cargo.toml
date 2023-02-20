@@ -1,9 +1,11 @@
 [package]
 name = "spl"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Stack Pogramming Language: A simple, concise scripting language."
+license = "MIT"
+repository = "https://github.com/tudbut/spl"
+authors = ["TudbuT"]
 
 [dependencies]
 readformat = "0.1"
