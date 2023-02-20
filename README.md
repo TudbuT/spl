@@ -10,6 +10,7 @@ func main { mega |
         { str | " " concat } swap:map
         &print swap:foreach
     "" println
+    0
 }
 ```
 
