@@ -1022,7 +1022,6 @@ impl Words {
                                 name: s + &x,
                             }));
                         }
-                        stack.pop();
                         stack.push(f.spl());
                     } else {
                         stack.call(&f)?;

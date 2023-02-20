@@ -93,6 +93,11 @@ func main { int | with args ;
     "}" println
 
     "" println
+    "Running with args: " print
+    argv:iter
+        { str | " " concat } swap:map
+        &print swap:foreach
+    "" println
 
     100
 }

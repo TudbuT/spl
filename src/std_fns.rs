@@ -236,6 +236,19 @@ pub fn star(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn percent(stack: &mut Stack) -> OError {
+    let b = stack.pop().lock_ro().native.clone();
+    let a = stack.pop().lock_ro().native.clone();
+    stack.push(
+        match (a, b) {
+            (Value::Mega(a), Value::Mega(b)) => Value::Mega(a % b),
+            _ => todo!(),
+        }
+        .spl(),
+    );
+    Ok(())
+}
+
 pub fn to_int(stack: &mut Stack) -> OError {
     let o = stack.pop().lock_ro().native.clone();
     stack.push(
@@ -410,6 +423,17 @@ pub fn call(stack: &mut Stack) -> OError {
     stack.call(&a)
 }
 
+pub fn callp(stack: &mut Stack) -> OError {
+    let Value::Func(a) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("callp".to_owned()))
+    };
+    stack.call(&a)?;
+    for _ in 0..a.ret_count {
+        stack.pop();
+    };
+    Ok(())
+}
+
 pub fn trace(stack: &mut Stack) -> OError {
     let trace = stack.trace();
     stack.push(Value::Array(trace.into_iter().map(|x| Value::Str(x).spl()).collect()).spl());
@@ -578,7 +602,7 @@ pub fn readln(stack: &mut Stack) -> OError {
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 42] = [
+    let fns: [(&str, Fn, u32); 44] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -601,6 +625,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("-", minus, 1),
         ("/", slash, 1),
         ("*", star, 1),
+        ("%", percent, 1),
         ("_int", to_int, 1),
         ("_long", to_long, 1),
         ("_mega", to_mega, 1),
@@ -609,6 +634,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("_array", to_array, 1),
         ("_str", to_str, 1),
         ("call", call, 0),
+        ("callp", callp, 0),
         ("trace", trace, 1),
         ("mr-trace", mr_trace, 1),
         ("exit", exit, 0),
