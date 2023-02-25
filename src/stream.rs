@@ -16,6 +16,7 @@ static STREAM_TYPES: Lazy<Arc<Mut<HashMap<String, StreamType>>>> =
     Lazy::new(|| Arc::new(Mut::new(HashMap::new())));
 static IS_INITIALIZED: Lazy<Arc<Mut<bool>>> = Lazy::new(|| Arc::new(Mut::new(false)));
 
+/// Registers a custom stream type.
 pub fn register_stream_type(
     name: &str,
     supplier: impl Fn(&mut Stack) -> Result<Stream, Error> + Sync + Send + 'static,
@@ -25,10 +26,12 @@ pub fn register_stream_type(
         .insert(name.to_owned(), StreamType::from(supplier));
 }
 
+/// Gets a stream type by name.
 pub fn get_stream_type(name: String) -> Option<StreamType> {
     STREAM_TYPES.lock_ro().get(&name).cloned()
 }
 
+/// An SPL stream type.
 #[derive(Clone)]
 pub struct StreamType {
     func: Arc<Box<dyn Fn(&mut Stack) -> Result<Stream, Error> + Sync + Send + 'static>>,
@@ -40,6 +43,7 @@ impl StreamType {
     }
 }
 
+/// An SPL stream, holding a reader and a writer, and a function to close it.
 pub struct Stream {
     reader: Box<dyn Read + 'static>,
     writer: Box<dyn Write + 'static>,
@@ -303,7 +307,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
             AFunc::new(Func {
                 ret_count: f.2,
                 to_call: FuncImpl::Native(f.1),
-                run_at_base: false,
+                run_as_base: false,
                 origin: o.clone(),
                 fname: None,
                 name: f.0.to_owned(),

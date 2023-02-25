@@ -16,7 +16,7 @@ checksum = "b03f7fbd470aa8b3ad163c85cce8bccfc11cc9c44ef12da0a4eddd98bd307352"
 
 [[package]]
 name = "spl"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "once_cell",
  "readformat",

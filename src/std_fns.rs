@@ -562,7 +562,12 @@ pub fn import(stack: &mut Stack) -> OError {
     let Value::Str(mut s) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("import".to_owned()))
     };
-    let fallback = match s.as_str().rsplit_once(|x| x == '/' || x == '#').map(|(.., x)| x).unwrap_or(s.as_str()) {
+    let fallback = match s
+        .as_str()
+        .rsplit_once(|x| x == '/' || x == '#')
+        .map(|(.., x)| x)
+        .unwrap_or(s.as_str())
+    {
         "std.spl" => Some(stdlib::STD),
         "iter.spl" => Some(stdlib::ITER),
         "stream.spl" => Some(stdlib::STREAM),
@@ -591,8 +596,8 @@ pub fn import(stack: &mut Stack) -> OError {
             stack.push(Value::Str(fallback.to_owned()).spl());
             Ok(())
         } else {
-            Err(x) 
-        } 
+            Err(x)
+        }
     })?;
     dyn_fns::wrap(dyn_fns::dyn_readf)(stack)?;
     call(stack)?;
@@ -763,7 +768,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
             AFunc::new(Func {
                 ret_count: f.2,
                 to_call: FuncImpl::Native(f.1),
-                run_at_base: false,
+                run_as_base: false,
                 origin: o.clone(),
                 fname: None,
                 name: f.0.to_owned(),

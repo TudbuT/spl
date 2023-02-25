@@ -56,7 +56,7 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                 words.push(Word::Const(Value::Func(AFunc::new(Func {
                     ret_count: block.0.ok_or(LexerError::FunctionBlockExpected)?,
                     to_call: FuncImpl::SPL(block.1),
-                    run_at_base: false,
+                    run_as_base: false,
                     origin: Arc::new(Frame::dummy()),
                     fname: None,
                     name: "dyn".to_owned(),

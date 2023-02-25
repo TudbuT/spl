@@ -1,4 +1,4 @@
-use spl::{start_file};
+use spl::start_file;
 
 use std::env::args;
 

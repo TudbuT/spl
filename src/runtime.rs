@@ -1,8 +1,8 @@
 use crate::{
     dyn_fns,
     mutex::*,
-    std_fns,
-    stream::{self, *}, stdlib,
+    std_fns, stdlib,
+    stream::{self, *},
 };
 
 use core::panic;
@@ -26,6 +26,7 @@ thread_local! {
     static RUNTIME: RefCell<Option<Arc<Mut<Runtime>>>> = RefCell::new(None);
 }
 
+/// Obtains a reference to the runtime.
 pub fn runtime<T>(f: impl FnOnce(RwLockReadGuard<Runtime>) -> T) -> T {
     RUNTIME.with(|rt| {
         f(rt.borrow_mut()
@@ -35,6 +36,7 @@ pub fn runtime<T>(f: impl FnOnce(RwLockReadGuard<Runtime>) -> T) -> T {
     })
 }
 
+/// Obtains a mutable reference to the runtime.
 pub fn runtime_mut<T>(f: impl FnOnce(RwLockWriteGuard<Runtime>) -> T) -> T {
     RUNTIME.with(|rt| {
         f(rt.borrow_mut()
@@ -44,6 +46,12 @@ pub fn runtime_mut<T>(f: impl FnOnce(RwLockWriteGuard<Runtime>) -> T) -> T {
     })
 }
 
+/// An SPL runtime.
+///
+/// This holds:
+/// - types
+/// - type refs
+/// - streams
 #[derive(Clone)]
 pub struct Runtime {
     next_type_id: u32,
@@ -139,6 +147,8 @@ impl Runtime {
     }
 }
 
+/// Anything that can be .set() and result in the runtime being set.
+/// Implemented for Arc<Mut<Runtime>> and Runtime.
 pub trait SetRuntime {
     fn set(self);
 }
@@ -155,12 +165,21 @@ impl SetRuntime for Arc<Mut<Runtime>> {
     }
 }
 
+/// A frame's location in SPL code.
 #[derive(Clone, Debug)]
 pub struct FrameInfo {
     pub file: String,
     pub function: String,
 }
 
+/// An SPL stack frame.
+///
+/// This holds:
+/// - its parent
+/// - variables
+/// - functions
+/// - its origin ([FrameInfo])
+/// - whether all functions in it should be made global.
 #[derive(Clone, Debug)]
 pub struct Frame {
     parent: Option<Arc<Frame>>,
@@ -211,7 +230,7 @@ impl Frame {
             variables: Mut::new(HashMap::new()),
             functions: Mut::new(HashMap::new()),
             origin: FrameInfo {
-                file: "RUNTIME".to_owned(),
+                file: "std.spl".to_owned(),
                 function: "root".to_owned(),
             },
             redirect_to_base: false,
@@ -331,6 +350,12 @@ impl Frame {
     }
 }
 
+/// An SPL stack.
+///
+/// This holds:
+/// - a stack of frames
+/// - the main stack of objects
+/// - a return accumultor: how many blocks to return directly from
 #[derive(Clone, Debug)]
 pub struct Stack {
     frames: Vec<Arc<Frame>>,
@@ -408,7 +433,7 @@ impl Stack {
                 func.origin.clone(),
                 cname.clone(),
                 func.name.clone(),
-                func.run_at_base,
+                func.run_as_base,
             )
         } else {
             Frame::new(func.origin.clone(), func.name.clone())
@@ -453,7 +478,7 @@ impl Stack {
                     stack.push(tmpframe.get_var(tmpname.clone(), stack)?);
                     Ok(())
                 }))),
-                run_at_base: false,
+                run_as_base: false,
                 fname: Some("RUNTIME".to_owned()),
                 name: name.clone(),
             }),
@@ -469,7 +494,7 @@ impl Stack {
                     let v = stack.pop();
                     tmpframe.set_var(tmpname.clone(), v, stack)
                 }))),
-                run_at_base: false,
+                run_as_base: false,
                 fname: Some("RUNTIME".to_owned()),
                 name: "=".to_owned() + &name,
             }),
@@ -568,6 +593,9 @@ impl Stack {
     }
 }
 
+/// An SPL keyword. Used to deviate from normal linear code structure.
+///
+/// This is different from a [Word], which are any SPL code.
 #[derive(Clone, Debug)]
 pub enum Keyword {
     /// <none>
@@ -618,6 +646,9 @@ pub enum Keyword {
     With(Vec<String>),
 }
 
+/// Any SPL value that is not a construct.
+///
+/// Holds its rust representation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Null,
@@ -660,19 +691,32 @@ impl PartialOrd for Value {
     }
 }
 
+/// The smallest fragment of SPL code.
 #[derive(Clone, Debug)]
 pub enum Word {
+    /// A keyword, used to deviate from normal code structure.
     Key(Keyword),
+    /// A constant to push to the stack when encountered.
     Const(Value),
+    /// A function call.
     Call(String, bool, u32),
+    /// A method call.
     ObjCall(String, bool, u32),
 }
 
+/// A collection of executable words.
 #[derive(Clone, Debug)]
 pub struct Words {
     pub words: Vec<Word>,
 }
 
+impl Words {
+    pub fn new(words: Vec<Word>) -> Self {
+        Words { words }
+    }
+}
+
+/// Any kind of SPL-executable code.
 #[derive(Clone)]
 pub enum FuncImpl {
     Native(fn(&mut Stack) -> OError),
@@ -690,14 +734,24 @@ impl FuncImpl {
     }
 }
 
+/// Any kind of SPL-executable code with metadata surrounding it.
+///
+/// This holds:
+/// - the amount of values returned when called
+/// - the actual executable code ([FuncImpl])
+/// - the frame that defined it
+/// - the name of the file it was defined in, if this is different form the definition frame
+/// - the name of the function.
+/// - wether it should be run as the root layer (= wether functions it defines should be made
+///   global)
 #[derive(Clone)]
 pub struct Func {
     pub ret_count: u32,
     pub to_call: FuncImpl,
-    pub run_at_base: bool,
     pub origin: Arc<Frame>,
     pub fname: Option<String>,
     pub name: String,
+    pub run_as_base: bool,
 }
 
 impl PartialEq for Func {
@@ -713,6 +767,14 @@ impl Debug for Func {
     }
 }
 
+/// Any SPL type.
+///
+/// This holds:
+/// - the name
+/// - the numeric ID
+/// - its parent types
+/// - its methods
+/// - its fields
 #[derive(Clone, Debug)]
 pub struct Type {
     name: String,
@@ -785,8 +847,8 @@ impl Type {
                     );
                     Ok(())
                 }))),
-                run_at_base: false,
                 origin: origin.clone(),
+                run_as_base: false,
                 fname: Some("RUNTIME".to_owned()),
                 name: name.clone(),
             }),
@@ -802,8 +864,8 @@ impl Type {
                     o.lock().property_map.insert(tmpname.clone(), v);
                     Ok(())
                 }))),
-                run_at_base: false,
                 origin,
+                run_as_base: false,
                 fname: Some("RUNTIME".to_owned()),
                 name: "=".to_owned() + &name,
             }),
@@ -813,6 +875,12 @@ impl Type {
     }
 }
 
+/// Any kind of SPL object, no matter if it is a construct or not.
+///
+/// This holds:
+/// - the type of the object
+/// - the fields mandated by the type
+/// - the native value ([Value]), null for constructs unless set manually.
 #[derive(Clone, Debug)]
 pub struct Object {
     pub kind: AMType,
@@ -905,6 +973,7 @@ impl From<Value> for Object {
     }
 }
 
+/// Trait for converting things to SPL Objects.
 pub trait SPL {
     fn spl(self) -> AMObject;
 }
@@ -918,6 +987,7 @@ where
     }
 }
 
+/// Finds a file in the SPL_PATH, or returns the internal [stdlib] version of it.
 pub fn find_in_splpath(path: &str) -> Result<String, String> {
     if Path::new(path).exists() {
         return Ok(path.to_owned());
@@ -936,6 +1006,8 @@ pub fn find_in_splpath(path: &str) -> Result<String, String> {
 }
 
 impl Words {
+    /// Executes the words. This does *not* create a new frame on the stack. Use [Stack::call] to
+    /// call and create a new frame.
     pub fn exec(&self, stack: &mut Stack) -> OError {
         for word in self.words.clone() {
             match word {
@@ -947,8 +1019,8 @@ impl Words {
                         Arc::new(Func {
                             ret_count: rem,
                             to_call: FuncImpl::SPL(words),
-                            run_at_base: false,
                             origin: stack.get_frame(),
+                            run_as_base: false,
                             fname: None,
                             name,
                         }),
@@ -970,8 +1042,8 @@ impl Words {
                                                 Arc::new(Func {
                                                     ret_count: v.0,
                                                     to_call: FuncImpl::SPL(v.1),
-                                                    run_at_base: false,
                                                     origin: origin.clone(),
+                                                    run_as_base: false,
                                                     fname: None,
                                                     name: name.clone() + ":" + &k,
                                                 }),
@@ -1048,8 +1120,8 @@ impl Words {
                                     stack.push(ftmp.clone().spl());
                                     Ok(())
                                 }))),
-                                run_at_base: false,
                                 origin: stack.get_frame(),
+                                run_as_base: false,
                                 fname: None,
                                 name: s + &x,
                             }));
@@ -1094,8 +1166,8 @@ impl Words {
                                     stack.push(ftmp.clone().spl());
                                     Ok(())
                                 }))),
-                                run_at_base: false,
                                 origin: stack.get_frame(),
+                                run_as_base: false,
                                 fname: None,
                                 name: s + &x,
                             }));
@@ -1121,6 +1193,7 @@ impl Words {
     }
 }
 
+/// Any error SPL can handle and throw.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Parse(String, String),
@@ -1137,6 +1210,7 @@ pub enum ErrorKind {
     CustomObject(AMObject),
 }
 
+/// Wrapper for ErrorKind with the stack trace.
 #[derive(PartialEq, Eq)]
 pub struct Error {
     pub kind: ErrorKind,

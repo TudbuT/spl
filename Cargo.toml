@@ -1,6 +1,6 @@
 [package]
 name = "spl"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "Stack Pogramming Language: A simple, concise scripting language."
 license = "MIT"
