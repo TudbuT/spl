@@ -10,7 +10,8 @@ func main { mega |
     [ "sudo" "chmod" "a+rx" "/bin/spl" ] command-wait;
 
     "add vim syntax";
-    [ "sudo" "cp" "spl.vim" "/usr/share/*vim*/runtime/syntax/spl.vim"] command-wait;
+    [ "sudo" "cp" "spl.vim" "/usr/share/vim/vim90/syntax/" ] command-wait;
+    [ "sudo" "cp" "spl.vim" "/usr/share/nvim/runtime/syntax/" ] command-wait;
 
     "SPL is now installed!" println
 
