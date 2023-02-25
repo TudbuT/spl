@@ -191,7 +191,7 @@ pub fn plus(stack: &mut Stack) -> OError {
     stack.push(
         match (a, b) {
             (Value::Mega(a), Value::Mega(b)) => Value::Mega(a + b),
-            x => stack.err(ErrorKind::InvalidCall("plus".to_owned()))?,
+            _x => stack.err(ErrorKind::InvalidCall("plus".to_owned()))?,
         }
         .spl(),
     );
@@ -611,15 +611,15 @@ pub fn command(stack: &mut Stack) -> OError {
         return stack.err(ErrorKind::InvalidCall("command".to_owned()))
     };
     let mut args = Vec::new();
-    for item in a.into_iter() {
+    for item in a.iter() {
         if let Value::Str(ref s) = item.lock_ro().native {
             args.push(s.to_owned());
         }
     }
-    if args.len() < 1 {
+    if args.is_empty() {
         return stack.err(ErrorKind::InvalidCall("command".to_owned()));
     }
-    process::Command::new(args[0].to_owned())
+    process::Command::new(&args[0])
         .args(&args[1..])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -635,19 +635,19 @@ pub fn command_wait(stack: &mut Stack) -> OError {
         return stack.err(ErrorKind::InvalidCall("command".to_owned()))
     };
     let mut args = Vec::new();
-    for item in a.into_iter() {
+    for item in a.iter() {
         if let Value::Str(ref s) = item.lock_ro().native {
             args.push(s.to_owned());
         } else {
             return stack.err(ErrorKind::InvalidCall("command".to_owned()));
         }
     }
-    if args.len() < 1 {
+    if args.is_empty() {
         return stack.err(ErrorKind::InvalidCall("command".to_owned()));
     }
     stack.push(
         Value::Int(
-            process::Command::new(args[0].to_owned())
+            process::Command::new(&args[0])
                 .args(&args[1..])
                 .stdin(Stdio::inherit())
                 .stdout(Stdio::inherit())
@@ -681,7 +681,7 @@ pub fn str_to_bytes(stack: &mut Stack) -> OError {
 pub fn bytes_to_str(stack: &mut Stack) -> OError {
     require_array_on_stack!(a, stack, "str-to-bytes");
     let mut chars = Vec::new();
-    for item in a.into_iter() {
+    for item in a.iter() {
         if let Value::Int(x) = item.lock_ro().native.clone().try_mega_to_int() {
             chars.push(x as u8);
         } else {
