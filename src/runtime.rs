@@ -6,8 +6,7 @@ use crate::{
 };
 
 use core::panic;
-use std::mem;
-use std::sync::RwLockWriteGuard;
+use std::sync::{RwLockWriteGuard, RwLockReadGuard};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -15,7 +14,8 @@ use std::{
     sync::Arc,
     vec,
 };
-use std::{collections::VecDeque, thread::panicking};
+use std::collections::VecDeque;
+use std::{env::var, mem, path::Path};
 
 pub type AMObject = Arc<Mut<Object>>;
 pub type AMType = Arc<Mut<Type>>;
@@ -26,7 +26,16 @@ thread_local! {
     static RUNTIME: RefCell<Option<Arc<Mut<Runtime>>>> = RefCell::new(None);
 }
 
-pub fn runtime<T>(f: impl FnOnce(RwLockWriteGuard<Runtime>) -> T) -> T {
+pub fn runtime<T>(f: impl FnOnce(RwLockReadGuard<Runtime>) -> T) -> T {
+    RUNTIME.with(|rt| {
+        f(rt.borrow_mut()
+            .as_mut()
+            .expect("no runtime (use .set())")
+            .lock_ro())
+    })
+}
+
+pub fn runtime_mut<T>(f: impl FnOnce(RwLockWriteGuard<Runtime>) -> T) -> T {
     RUNTIME.with(|rt| {
         f(rt.borrow_mut()
             .as_mut()
@@ -171,7 +180,13 @@ impl Display for Frame {
             std::fmt::Display::fmt(&object.lock_ro(), f)?;
             f.write_str("\n")?;
         }
-        f.write_str("\n")?;
+        f.write_str("\nFuncs: \n")?;
+        for (name, ..) in self.functions.lock_ro().iter() {
+            f.write_str("  ")?;
+            f.write_str(name)?;
+            f.write_str("\n")?;
+        }
+        f.write_str("\n\n")?;
         Ok(())
     }
 }
@@ -399,9 +414,9 @@ impl Stack {
             Frame::new(func.origin.clone(), func.name.clone())
         };
         self.frames.push(Arc::new(f));
-        func.to_call.call(self)?;
+        let r = func.to_call.call(self);
         self.frames.pop().unwrap();
-        Ok(())
+        r
     }
 
     pub fn get_func(&self, name: String) -> Result<AFunc, Error> {
@@ -558,9 +573,9 @@ pub enum Keyword {
     /// <none>
     ///
     /// Dumps stack. Not available as actual keyword, therefore only obtainable through AST
-    /// manipulation or modding. When using dyn variant, it must be enabled in the main function.
+    /// manipulation, a dyn call, or modding.
     /// equivalent to dyn-__dump
-    /// example: func main { int | dyn-__dump-check "Hello, world!" dyn-__dump 0 }
+    /// example: func main { int | "Hello, world!" dyn-__dump pop 0 }
     Dump,
     /// def <name>
     ///
@@ -816,7 +831,7 @@ impl PartialEq for Object {
 impl PartialOrd for Object {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.kind != other.kind {
-            panic!();
+            return None;
         }
         self.native.partial_cmp(&other.native)
     }
@@ -903,6 +918,18 @@ where
     }
 }
 
+pub fn find_in_splpath(path: &str) -> String {
+    if Path::new(path).exists() {
+        return path.to_owned();
+    }
+    let s = var("SPL_PATH").unwrap_or("/usr/lib/spl".to_owned()) + "/" + path;
+    if Path::new(&s).exists() {
+        s
+    } else {
+        path.to_owned()
+    }
+}
+
 impl Words {
     pub fn exec(&self, stack: &mut Stack) -> OError {
         for word in self.words.clone() {
@@ -927,7 +954,7 @@ impl Words {
                         stack.set_var(
                             name.clone(),
                             Value::Str(
-                                runtime(move |mut rt| {
+                                runtime_mut(move |mut rt| {
                                     rt.make_type(name.clone(), move |mut t| {
                                         for field in fields {
                                             t.add_property(field, origin.clone())?;
@@ -1113,18 +1140,11 @@ pub struct Error {
 
 impl Debug for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if panicking() {
-            f.write_str("\n\nSPL PANIC DUE TO UNCAUGHT ERROR:\n")?;
-            f.write_str(format!("Error: {:?}", self.kind).as_str())?;
-            f.write_str("\n")?;
-            f.write_str(self.stack.join("\n").as_str())?;
-            f.write_str("\n\n")?;
-            Ok(())
-        } else {
-            f.debug_struct("Error")
-                .field("kind", &self.kind)
-                .field("stack", &self.stack)
-                .finish()
-        }
+        f.write_str("\n\nSPL PANIC DUE TO UNCAUGHT ERROR:\n")?;
+        f.write_str(format!("Error: {:?}", self.kind).as_str())?;
+        f.write_str("\n")?;
+        f.write_str(self.stack.join("\n").as_str())?;
+        f.write_str("\n\n")?;
+        Ok(())
     }
 }

@@ -1,4 +1,6 @@
 
+"stream.spl" import
+
 func main { int | with args ;
     def thing
 
@@ -97,6 +99,14 @@ func main { int | with args ;
     argv:iter
         { str | " " concat } swap:map
         &print swap:foreach
+
+    "" println
+    "testing stream" println
+
+    def file "test.txt" 1 StreamTypes:file:create =file 
+    "hi" _array file:write-exact; 
+    file:close null =file
+    
     "" println
 
     100

@@ -190,7 +190,6 @@ pub fn dyn_read(stack: &mut Stack) -> OError {
     let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("dyn-read".to_owned()))
     };
-    let origin = stack.peek_frame(1);
     stack.push(
         Value::Func(AFunc::new(Func {
             ret_count: 0,
@@ -199,7 +198,7 @@ pub fn dyn_read(stack: &mut Stack) -> OError {
                 stack: stack.trace(),
             })?),
             run_at_base: false,
-            origin,
+            origin: stack.get_frame(),
             fname: None,
             name: "(dyn-read)".to_owned(),
         }))
@@ -218,7 +217,6 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
     ) else {
         return stack.err(ErrorKind::InvalidCall("dyn-readf".to_owned()))
     };
-    let origin = stack.peek_frame(1);
     stack.push(
         Value::Func(AFunc::new(Func {
             ret_count: 0,
@@ -227,13 +225,24 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
                 stack: stack.trace(),
             })?),
             run_at_base: true,
-            origin,
+            origin: stack.get_frame(),
             fname: Some(n),
-            name: "(dyn-read)".to_owned(),
+            name: "root".to_owned(),
         }))
         .spl(),
     );
     Ok(())
+}
+
+fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError {
+    move |stack| {
+        unsafe {
+            let frame = stack.pop_frame(0);
+            let r = f(stack);
+            stack.push_frame(frame);
+            r
+        }
+    }
 }
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
@@ -259,7 +268,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
             f.0.to_owned(),
             AFunc::new(Func {
                 ret_count: f.2,
-                to_call: FuncImpl::Native(f.1),
+                to_call: FuncImpl::NativeDyn(Arc::new(Box::new(wrap(f.1)))),
                 run_at_base: false,
                 origin: o.clone(),
                 fname: None,

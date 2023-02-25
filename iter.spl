@@ -1,0 +1,205 @@
+
+construct _Iter {
+    ;
+    foreach { | with callable this ;
+        def itm
+        while { this:next dup =itm null eq not } {
+            itm callable call
+        }
+    }
+    collect { array | with this ;
+        [ { any | } this:foreach ]
+    }
+    map { MapIter | with map-function this ;
+        map-function this MapIter:new
+    }
+    reduce { ReduceIter | with reduce-function this ;
+        reduce-function this ReduceIter:new
+    }
+    fold { FoldIter | with accumulator fold-function this ;
+        accumulator fold-function this FoldIter:new
+    }
+    sum { mega | with this ; 
+        { mega | with accum item ;
+            accum item +
+        } this:reduce:calculate
+    }
+    product { mega | with this ; 
+        { mega | with accum item ;
+            accum item *
+        } this:reduce:calculate
+    }
+    join { str | with separator this ;
+        { str | with accum item ;
+            accum _str separator item _str strconcat strconcat
+        } this:reduce:calculate
+    }
+    filter { FilterIter | with filter this ;
+        filter this FilterIter:new
+    }
+    skip { this | with amount this ;
+        { | 
+            this:next;
+        } amount:foreach
+    }
+    count { mega | with this ;
+        def n 0 =n
+        while { this:next null eq not } {
+            n ++ =n
+        }
+        n
+    }
+    last { any | with this ;
+        def last 
+        def cur
+        while { this:next dup =cur null eq not } {
+            cur =last
+        }
+        last
+    }
+    chain { ChainIter | with other this ;
+        other this ChainIter:new
+    }
+    enumerate { EnumerationIter | with this ;
+        this EnumerationIter:new
+    }
+}
+
+construct MapIter {
+    origin
+    map-function
+    ;
+    construct { this | with map-function origin this ;
+        origin this:=origin
+        map-function this:=map-function
+        this
+    }
+    next { any | with this ;
+        this:origin:next dup null eq if {
+            2 stop
+        }
+        this:map-function call
+    }
+}
+
+include _Iter in MapIter 
+
+construct ReduceIter {
+    origin
+    accumulator
+    reduce-function
+    ;
+    construct { this | with reduce-function origin this ;
+        origin this:=origin
+        reduce-function this:=reduce-function
+        this
+    }
+    next { any | with this ;
+        def itm 
+        this:origin:next dup null eq if {
+            2 stop
+        } =itm
+        this:accumulator null eq if {
+            itm dup this:=accumulator
+            null 2 stop
+        }
+        this:accumulator itm this:reduce-function call dup this:=accumulator
+    }
+    calculate { any | with this ;
+        { | pop } this:foreach
+        this:accumulator
+    }
+}
+
+include _Iter in ReduceIter
+
+construct FoldIter {
+    origin
+    accumulator
+    reduce-function
+    ;
+    construct { this | with accumulator fold-function origin this ;
+        accumulator this:=accumulator
+        origin this:=origin
+        fold-function this:=fold-function
+        this
+    }
+    next { any | with this ;
+        def itm 
+        this:origin:next dup null eq if {
+            2 stop
+        } =itm
+        this:accumulator itm this:fold-function call dup this:=accumulator
+    }
+}
+
+include _Iter in FoldIter
+
+construct FilterIter {
+    origin 
+    filter
+    ;
+    construct { this | with filter origin this ;
+        origin this:=origin
+        filter this:=filter
+        this
+    }
+    next { any | with this ;
+        while { 1 } {
+            def next this:origin:next =next 
+            next null eq if {
+                null
+                3 stop
+            }
+            next this:filter call if { 
+                next 3 stop
+            }
+        }
+    }
+}
+
+include _Iter in FilterIter
+
+construct ChainIter {
+    current
+    next-iters
+    ;
+    construct { this | with other origin this ;
+        [ other ] List:new this:=next-iters
+        origin this:=current
+        this
+    }
+    next { any | with this ;
+        def item this:current:next =item
+        while { item null eq } {
+            this:next-iters:pop-front dup null eq not if {
+                this:=current
+                this:current:next =item
+            } 2 stop
+        }
+        item
+    }
+    chain { this | with other this ;
+        other this:next-iters:push
+    }
+}
+
+include _Iter in ChainIter
+
+construct EnumerationIter {
+    origin
+    idx
+    ;
+    construct { this | with origin this ;
+        origin this:=origin
+        this
+    }
+    next { [mega,any]|null | with this ;
+        this:origin:next dup null eq not if {
+            [ swap this:idx swap ]
+            this:idx ++ this:=idx
+        }
+    }
+}
+
+include _Iter in EnumerationIter

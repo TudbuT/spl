@@ -1,9 +1,10 @@
 use std::{
     collections::VecDeque,
-    env::{args, var, vars},
+    env::{args, vars},
     fs,
     io::{stdin, stdout, Write},
-    mem, process,
+    mem,
+    process::{self, Stdio},
     sync::Arc,
 };
 
@@ -190,7 +191,7 @@ pub fn plus(stack: &mut Stack) -> OError {
     stack.push(
         match (a, b) {
             (Value::Mega(a), Value::Mega(b)) => Value::Mega(a + b),
-            x => todo!("{x:?}"),
+            x => stack.err(ErrorKind::InvalidCall("plus".to_owned()))?,
         }
         .spl(),
     );
@@ -430,7 +431,7 @@ pub fn callp(stack: &mut Stack) -> OError {
     stack.call(&a)?;
     for _ in 0..a.ret_count {
         stack.pop();
-    };
+    }
     Ok(())
 }
 
@@ -487,7 +488,9 @@ pub fn exec(stack: &mut Stack) -> OError {
     };
     unsafe {
         let f = stack.pop_frame(0);
+        let f1 = stack.pop_frame(0);
         a.to_call.call(stack)?;
+        stack.push_frame(f1);
         stack.push_frame(f);
     }
     Ok(())
@@ -500,7 +503,9 @@ pub fn exec2(stack: &mut Stack) -> OError {
     unsafe {
         let f = stack.pop_frame(0);
         let f1 = stack.pop_frame(0);
+        let f2 = stack.pop_frame(0);
         a.to_call.call(stack)?;
+        stack.push_frame(f2);
         stack.push_frame(f1);
         stack.push_frame(f);
     }
@@ -555,15 +560,15 @@ pub fn alit_end(stack: &mut Stack) -> OError {
 
 pub fn import(stack: &mut Stack) -> OError {
     let Value::Str(mut s) = stack.pop().lock_ro().native.clone() else {
-        return stack.err(ErrorKind::InvalidCall("include".to_owned()))
+        return stack.err(ErrorKind::InvalidCall("import".to_owned()))
     };
     if let Some(x) = s.strip_prefix('#') {
-        s = var("SPL_PATH").unwrap_or("/usr/lib/spl".to_owned()) + "/" + x;
+        s = find_in_splpath(x);
     } else if let Some(x) = s.strip_prefix('@') {
         s = x.to_owned();
     } else {
         s = stack
-            .get_frame()
+            .peek_frame(1)
             .origin
             .file
             .rsplit_once('/')
@@ -600,9 +605,66 @@ pub fn readln(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn command(stack: &mut Stack) -> OError {
+    let binding = stack.pop();
+    let Value::Array(ref a) = binding.lock_ro().native else {
+        return stack.err(ErrorKind::InvalidCall("command".to_owned()))
+    };
+    let mut args = Vec::new();
+    for item in a.into_iter() {
+        if let Value::Str(ref s) = item.lock_ro().native {
+            args.push(s.to_owned());
+        }
+    }
+    if args.len() < 1 {
+        return stack.err(ErrorKind::InvalidCall("command".to_owned()));
+    }
+    process::Command::new(args[0].to_owned())
+        .args(&args[1..])
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?;
+    Ok(())
+}
+
+pub fn command_wait(stack: &mut Stack) -> OError {
+    let binding = stack.pop();
+    let Value::Array(ref a) = binding.lock_ro().native else {
+        return stack.err(ErrorKind::InvalidCall("command".to_owned()))
+    };
+    let mut args = Vec::new();
+    for item in a.into_iter() {
+        if let Value::Str(ref s) = item.lock_ro().native {
+            args.push(s.to_owned());
+        }
+    }
+    if args.len() < 1 {
+        return stack.err(ErrorKind::InvalidCall("command".to_owned()));
+    }
+    stack.push(
+        Value::Int(
+            process::Command::new(args[0].to_owned())
+                .args(&args[1..])
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?
+                .wait()
+                .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?
+                .code()
+                .unwrap_or(-1),
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 44] = [
+    let fns: [(&str, Fn, u32); 46] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -647,6 +709,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("alit-end", alit_end, 1),
         ("import", import, 0),
         ("readln", readln, 1),
+        ("command", command, 0),
+        ("command-wait", command_wait, 1),
     ];
     for f in fns {
         r.define_func(

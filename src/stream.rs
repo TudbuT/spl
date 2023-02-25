@@ -1,11 +1,20 @@
-use std::{collections::HashMap, io::Read, io::Write, mem, sync::Arc};
+use std::{
+    collections::HashMap,
+    fs::{OpenOptions, File},
+    io::Read,
+    io::Write,
+    mem,
+    net::{TcpStream, Shutdown},
+    sync::Arc,
+};
 
 use once_cell::sync::Lazy;
 
-use crate::{mutex::Mut, runtime::*, type_err};
+use crate::{mutex::Mut, runtime::*, type_err, require_on_stack, require_int_on_stack, require_array_on_stack, require_mut_array_on_stack};
 
 static STREAM_TYPES: Lazy<Arc<Mut<HashMap<String, StreamType>>>> =
     Lazy::new(|| Arc::new(Mut::new(HashMap::new())));
+static IS_INITIALIZED: Lazy<Arc<Mut<bool>>> = Lazy::new(|| Arc::new(Mut::new(false)));
 
 pub fn register_stream_type(
     name: &str,
@@ -34,10 +43,11 @@ impl StreamType {
 pub struct Stream {
     reader: Box<dyn Read + 'static>,
     writer: Box<dyn Write + 'static>,
+    close: fn(&mut Self),
 }
 
 impl Stream {
-    pub fn new<T: Read + Write + 'static>(main: T) -> Self {
+    pub fn new<T: Read + Write + 'static>(main: T, close: fn(&mut Self)) -> Self {
         let mut rw = Box::new(main);
         Self {
             // SAFETY: Because these are both in private fields on one object, they can not be
@@ -45,12 +55,14 @@ impl Stream {
             // by the borrow checker on the Stream.
             reader: Box::new(unsafe { mem::transmute::<&mut _, &mut T>(rw.as_mut()) }),
             writer: rw,
+            close,
         }
     }
-    pub fn new_split(reader: impl Read + 'static, writer: impl Write + 'static) -> Self {
+    pub fn new_split(reader: impl Read + 'static, writer: impl Write + 'static, close: fn(&mut Self)) -> Self {
         Self {
             reader: Box::new(reader),
             writer: Box::new(writer),
+            close,
         }
     }
 }
@@ -111,30 +123,24 @@ where
 }
 
 pub fn new_stream(stack: &mut Stack) -> OError {
-    let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
-        return stack.err(ErrorKind::InvalidCall("new-stream".to_owned()))
-    };
-    let stream = runtime(|mut rt| {
+    require_on_stack!(s, Str, stack, "write-stream");
+    let stream = get_stream_type(s.clone())
+        .ok_or_else(|| {
+            stack.error(ErrorKind::VariableNotFound(format!("__stream-type-{s}")))
+        })?
+        .make_stream(stack)?;
+    let stream = runtime_mut(move |mut rt| {
         Ok(rt.register_stream(
-            get_stream_type(s.clone())
-                .ok_or_else(|| {
-                    stack.error(ErrorKind::VariableNotFound(format!("__stream-type-{s}")))
-                })?
-                .make_stream(stack)?,
+                stream
         ))
     })?;
     stack.push(Value::Mega(stream.0 as i128).spl());
     Ok(())
 }
 
-pub fn write_to_stream(stack: &mut Stack) -> OError {
-    let binding = stack.pop();
-    let Value::Array(ref a) = binding.lock_ro().native else {
-        return stack.err(ErrorKind::InvalidCall("write-to-stream".to_owned()))
-    };
-    let Value::Mega(id) = stack.pop().lock_ro().native.clone() else {
-        return stack.err(ErrorKind::InvalidCall("write-to-stream".to_owned()))
-    };
+pub fn write_stream(stack: &mut Stack) -> OError {
+    require_on_stack!(id, Mega, stack, "write-stream");
+    require_array_on_stack!(a, stack, "write-stream");
     let stream = runtime(|rt| {
         rt.get_stream(id as u128)
             .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
@@ -158,9 +164,132 @@ pub fn write_to_stream(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn write_all_stream(stack: &mut Stack) -> OError {
+    require_on_stack!(id, Mega, stack, "write-all-stream");
+    require_array_on_stack!(a, stack, "write-all-stream");
+    let stream = runtime(|rt| {
+        rt.get_stream(id as u128)
+            .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
+    })?;
+    let mut fixed = Vec::with_capacity(a.len());
+    for item in a.iter() {
+        match item.lock_ro().native {
+            Value::Int(x) => fixed.push(x as u8),
+            _ => type_err!(stack, "!int", "int"),
+        }
+    }
+    stream
+        .lock()
+        .write_all(&fixed[..])
+        .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?;
+    Ok(())
+}
+
+pub fn read_stream(stack: &mut Stack) -> OError {
+    require_on_stack!(id, Mega, stack, "read-stream");
+    require_mut_array_on_stack!(a, stack, "read-stream");
+    let stream = runtime(|rt| {
+        rt.get_stream(id as u128)
+            .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
+    })?;
+    let mut vec = vec![0; a.len()];
+    stack.push(
+        Value::Mega(
+            stream
+                .lock()
+                .read(&mut vec[..])
+                .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))? as i128,
+        )
+        .spl(),
+    );
+    a.clone_from_slice(
+        &vec.into_iter()
+            .map(|x| Value::Int(x as i32).spl())
+            .collect::<Vec<_>>(),
+    );
+    Ok(())
+}
+
+pub fn read_all_stream(stack: &mut Stack) -> OError {
+    require_on_stack!(id, Mega, stack, "read-all-stream");
+    require_mut_array_on_stack!(a, stack, "read-all-stream");
+    let stream = runtime(|rt| {
+        rt.get_stream(id as u128)
+            .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
+    })?;
+    let mut vec = vec![0; a.len()];
+    stream
+        .lock()
+        .read_exact(&mut vec[..])
+        .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?;
+    a.clone_from_slice(
+        &vec.into_iter()
+            .map(|x| Value::Int(x as i32).spl())
+            .collect::<Vec<_>>(),
+    );
+    Ok(())
+}
+
+pub fn close_stream(stack: &mut Stack) -> OError {
+    require_on_stack!(id, Mega, stack, "close-stream");
+    if let Some(stream) = runtime(|rt| {
+        rt.get_stream(id as u128)
+    }) {
+        let mut stream = stream.lock();
+        (stream.close)(&mut stream);
+    }
+    Ok(())
+}
+
+fn nop(_stream: &mut Stream) {} 
+
+fn stream_file(stack: &mut Stack) -> Result<Stream, Error> {
+    let truncate = stack.pop().lock_ro().is_truthy();
+    require_on_stack!(path, Str, stack, "FILE new-stream");
+    Ok(Stream::new(
+        OpenOptions::new()
+            .read(!truncate)
+            .write(true)
+            .create(truncate)
+            .truncate(truncate)
+            .open(path)
+            .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?,
+        nop
+    ))
+}
+
+fn stream_tcp(stack: &mut Stack) -> Result<Stream, Error> {
+    require_int_on_stack!(port, stack, "TCP new-stream");
+    require_on_stack!(ip, Str, stack, "TCP new-stream");
+    fn close_tcp(stream: &mut Stream) {
+        unsafe {
+            let f = ((stream.reader.as_mut() as *mut dyn Read).cast() as *mut TcpStream).as_mut().unwrap();
+            let _ = f.shutdown(Shutdown::Both);
+        }
+    }
+    Ok(Stream::new(
+        TcpStream::connect((ip, port as u16))
+            .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?,
+        close_tcp
+    ))
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
+    if !*IS_INITIALIZED.lock_ro() {
+        register_stream_type("file", stream_file);
+        register_stream_type("tcp", stream_tcp);
+        *IS_INITIALIZED.lock() = true;
+    }
+
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 1] = [("new-stream", new_stream, 1)];
+    let fns: [(&str, Fn, u32); 6] = [
+        ("new-stream", new_stream, 1),
+        ("write-stream", write_stream, 1),
+        ("write-all-stream", write_all_stream, 0),
+        ("read-stream", read_stream, 1),
+        ("read-all-stream", read_all_stream, 0),
+        ("close-stream", close_stream, 0),
+    ];
     for f in fns {
         r.define_func(
             f.0.to_owned(),

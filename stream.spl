@@ -1,0 +1,78 @@
+"The SPL stream is an IO construct used to read and write to ";
+"some external thing, for example a file or a TCP socket.";
+
+"All functions here are encapsulations of their native counterparts.";
+
+"Examples:";
+"def tcp 'localhost' 8080 StreamType:tcp:create =tcp";
+"def file 'test.txt' 1 StreamType:file:create =file 'hi':to-bytes file:write-exact; file:close null =file";
+
+construct Stream {
+    id 
+    ;
+    construct { this | with type this ;
+        type new-stream this:=id
+        this
+    }
+    read-one { mega | with this ;
+        def buf 1 anew =buf
+        while { buf this:id read-stream not } { }
+        0 buf:get _mega
+    }
+    "the buffer is written to in-place.";
+    read { mega [int] | with buf this ;
+        buf gettype "int" eq if { buf anew =buf }
+        buf this:id read-stream buf
+    }
+    "the buffer is written to in-place.";
+    read-exact { [int] | with buf this ;
+        buf gettype "int" eq if { buf anew =buf }
+        buf this:id read-all-stream buf
+    }
+    write { mega | with buf this ;
+        buf this:id write-stream
+    }
+    write-exact { | with buf this ;
+        buf this:id write-all-stream
+    }
+    close { | with this ;
+        this:id close-stream
+    }
+}
+
+construct StreamType {
+    id 
+    ;
+    construct { this | with id this ;
+        id this:=id
+        this
+    }
+    create { Stream | with this ;
+        this:id Stream:new
+    }
+}
+
+def stream-types 0 anew =stream-types
+
+construct _StreamType {
+    ;
+    construct { this | with this ;
+        { | with type ;
+            "type StreamType:new this:=<type>";
+            (type StreamType:new) (this ("=" type concat)) dyn-objcall
+        } stream-types:foreach
+        this
+    }
+}
+
+func register-stream-type { | with id ;
+    [ stream-types:to-stack id ] =stream-types
+    id _StreamType dyn-def-field
+}
+
+"tcp" register-stream-type
+"file" register-stream-type
+
+func StreamTypes { _StreamType |
+    _StreamType:new
+}
