@@ -234,7 +234,7 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
     Ok(())
 }
 
-fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError {
+pub(crate) fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError {
     move |stack| unsafe {
         let frame = stack.pop_frame(0);
         let r = f(stack);

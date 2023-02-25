@@ -2,7 +2,7 @@ use crate::{
     dyn_fns,
     mutex::*,
     std_fns,
-    stream::{self, *},
+    stream::{self, *}, stdlib,
 };
 
 use core::panic;
@@ -918,15 +918,20 @@ where
     }
 }
 
-pub fn find_in_splpath(path: &str) -> String {
+pub fn find_in_splpath(path: &str) -> Result<String, String> {
     if Path::new(path).exists() {
-        return path.to_owned();
+        return Ok(path.to_owned());
     }
     let s = var("SPL_PATH").unwrap_or("/usr/lib/spl".to_owned()) + "/" + path;
     if Path::new(&s).exists() {
-        s
+        Ok(s)
     } else {
-        path.to_owned()
+        match path {
+            "std.spl" => Err(stdlib::STD.to_owned()),
+            "iter.spl" => Err(stdlib::ITER.to_owned()),
+            "stream.spl" => Err(stdlib::STREAM.to_owned()),
+            _ => Ok(path.to_owned()),
+        }
     }
 }
 

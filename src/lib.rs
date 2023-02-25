@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::len_without_is_empty)]
 
+pub mod stdlib;
 pub mod dyn_fns;
 pub mod lexer;
 pub mod mutex;
@@ -24,8 +25,9 @@ pub fn start_file_in_runtime(path: &str) -> Result<Stack, Error> {
         function: "root".to_owned(),
     });
     // import stdlib
+    let f = find_in_splpath("std.spl");
     let words =
-        lex(fs::read_to_string(find_in_splpath("std.spl")).unwrap()).map_err(|x| Error {
+        lex(if let Ok(f) = f { fs::read_to_string(f).unwrap() } else { f.unwrap_err() }).map_err(|x| Error {
             kind: ErrorKind::LexError(format!("{x:?}")),
             stack: Vec::new(),
         })?;

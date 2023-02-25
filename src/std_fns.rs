@@ -562,8 +562,14 @@ pub fn import(stack: &mut Stack) -> OError {
     let Value::Str(mut s) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("import".to_owned()))
     };
+    let fallback = match s.as_str().rsplit_once(|x| x == '/' || x == '#').map(|(.., x)| x).unwrap_or(s.as_str()) {
+        "std.spl" => Some(stdlib::STD),
+        "iter.spl" => Some(stdlib::ITER),
+        "stream.spl" => Some(stdlib::STREAM),
+        _ => None,
+    };
     if let Some(x) = s.strip_prefix('#') {
-        s = find_in_splpath(x);
+        s = find_in_splpath(x).unwrap_or(x.to_owned());
     } else if let Some(x) = s.strip_prefix('@') {
         s = x.to_owned();
     } else {
@@ -580,8 +586,15 @@ pub fn import(stack: &mut Stack) -> OError {
     }
     stack.push(Value::Str(s).spl());
     dup(stack)?;
-    read_file(stack)?;
-    dyn_fns::dyn_readf(stack)?;
+    read_file(stack).or_else(|x| {
+        if let Some(fallback) = fallback {
+            stack.push(Value::Str(fallback.to_owned()).spl());
+            Ok(())
+        } else {
+            Err(x) 
+        } 
+    })?;
+    dyn_fns::wrap(dyn_fns::dyn_readf)(stack)?;
     call(stack)?;
     Ok(())
 }
