@@ -104,7 +104,7 @@ func main { int | with args ;
     "testing stream" println
 
     def file "test.txt" 1 StreamTypes:file:create =file 
-    "hi" _array file:write-exact; 
+    "hi\n" _:to-bytes file:write-exact; 
     file:close null =file
     
     "" println

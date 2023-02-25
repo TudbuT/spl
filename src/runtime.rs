@@ -6,7 +6,8 @@ use crate::{
 };
 
 use core::panic;
-use std::sync::{RwLockWriteGuard, RwLockReadGuard};
+use std::collections::VecDeque;
+use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -14,7 +15,6 @@ use std::{
     sync::Arc,
     vec,
 };
-use std::collections::VecDeque;
 use std::{env::var, mem, path::Path};
 
 pub type AMObject = Arc<Mut<Object>>;

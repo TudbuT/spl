@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dyn_fns, mutex::Mut, runtime::*};
+use crate::{dyn_fns, mutex::Mut, runtime::*, *};
 
 #[macro_export]
 macro_rules! type_err {
@@ -638,6 +638,8 @@ pub fn command_wait(stack: &mut Stack) -> OError {
     for item in a.into_iter() {
         if let Value::Str(ref s) = item.lock_ro().native {
             args.push(s.to_owned());
+        } else {
+            return stack.err(ErrorKind::InvalidCall("command".to_owned()));
         }
     }
     if args.len() < 1 {
@@ -662,9 +664,37 @@ pub fn command_wait(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn str_to_bytes(stack: &mut Stack) -> OError {
+    require_on_stack!(s, Str, stack, "str-to-bytes");
+    stack.push(
+        Value::Array(
+            s.bytes()
+                .into_iter()
+                .map(|x| Value::Int(x as i32).spl())
+                .collect(),
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
+pub fn bytes_to_str(stack: &mut Stack) -> OError {
+    require_array_on_stack!(a, stack, "str-to-bytes");
+    let mut chars = Vec::new();
+    for item in a.into_iter() {
+        if let Value::Int(x) = item.lock_ro().native.clone().try_mega_to_int() {
+            chars.push(x as u8);
+        } else {
+            return stack.err(ErrorKind::InvalidCall("command".to_owned()));
+        }
+    }
+    stack.push(Value::Str(String::from_utf8_lossy(&chars[..]).into_owned()).spl());
+    Ok(())
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 46] = [
+    let fns: [(&str, Fn, u32); 48] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -711,6 +741,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("readln", readln, 1),
         ("command", command, 0),
         ("command-wait", command_wait, 1),
+        ("str-to-bytes", str_to_bytes, 1),
+        ("bytes-to-str", bytes_to_str, 1),
     ];
     for f in fns {
         r.define_func(

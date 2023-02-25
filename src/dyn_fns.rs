@@ -235,13 +235,11 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
 }
 
 fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError {
-    move |stack| {
-        unsafe {
-            let frame = stack.pop_frame(0);
-            let r = f(stack);
-            stack.push_frame(frame);
-            r
-        }
+    move |stack| unsafe {
+        let frame = stack.pop_frame(0);
+        let r = f(stack);
+        stack.push_frame(frame);
+        r
     }
 }
 

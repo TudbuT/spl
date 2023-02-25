@@ -1,10 +1,10 @@
 use std::{
     collections::HashMap,
-    fs::{OpenOptions},
+    fs::OpenOptions,
     io::Read,
     io::Write,
     mem,
-    net::{TcpStream, Shutdown},
+    net::{Shutdown, TcpStream},
     sync::Arc,
 };
 
@@ -58,7 +58,11 @@ impl Stream {
             close,
         }
     }
-    pub fn new_split(reader: impl Read + 'static, writer: impl Write + 'static, close: fn(&mut Self)) -> Self {
+    pub fn new_split(
+        reader: impl Read + 'static,
+        writer: impl Write + 'static,
+        close: fn(&mut Self),
+    ) -> Self {
         Self {
             reader: Box::new(reader),
             writer: Box::new(writer),
@@ -125,15 +129,9 @@ where
 pub fn new_stream(stack: &mut Stack) -> OError {
     require_on_stack!(s, Str, stack, "write-stream");
     let stream = get_stream_type(s.clone())
-        .ok_or_else(|| {
-            stack.error(ErrorKind::VariableNotFound(format!("__stream-type-{s}")))
-        })?
+        .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-type-{s}"))))?
         .make_stream(stack)?;
-    let stream = runtime_mut(move |mut rt| {
-        Ok(rt.register_stream(
-                stream
-        ))
-    })?;
+    let stream = runtime_mut(move |mut rt| Ok(rt.register_stream(stream)))?;
     stack.push(Value::Mega(stream.0 as i128).spl());
     Ok(())
 }
@@ -200,7 +198,8 @@ pub fn read_stream(stack: &mut Stack) -> OError {
                 stream
                     .lock()
                     .read(&mut vec[..])
-                    .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))? as i128,
+                    .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?
+                    as i128,
             )
             .spl(),
         );
@@ -240,16 +239,14 @@ pub fn read_all_stream(stack: &mut Stack) -> OError {
 
 pub fn close_stream(stack: &mut Stack) -> OError {
     require_on_stack!(id, Mega, stack, "close-stream");
-    if let Some(stream) = runtime(|rt| {
-        rt.get_stream(id as u128)
-    }) {
+    if let Some(stream) = runtime(|rt| rt.get_stream(id as u128)) {
         let mut stream = stream.lock();
         (stream.close)(&mut stream);
     }
     Ok(())
 }
 
-fn nop(_stream: &mut Stream) {} 
+fn nop(_stream: &mut Stream) {}
 
 fn stream_file(stack: &mut Stack) -> Result<Stream, Error> {
     let truncate = stack.pop().lock_ro().is_truthy();
@@ -262,7 +259,7 @@ fn stream_file(stack: &mut Stack) -> Result<Stream, Error> {
             .truncate(truncate)
             .open(path)
             .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?,
-        nop
+        nop,
     ))
 }
 
@@ -271,14 +268,16 @@ fn stream_tcp(stack: &mut Stack) -> Result<Stream, Error> {
     require_on_stack!(ip, Str, stack, "TCP new-stream");
     fn close_tcp(stream: &mut Stream) {
         unsafe {
-            let f = ((stream.reader.as_mut() as *mut dyn Read).cast() as *mut TcpStream).as_mut().unwrap();
+            let f = ((stream.reader.as_mut() as *mut dyn Read).cast() as *mut TcpStream)
+                .as_mut()
+                .unwrap();
             let _ = f.shutdown(Shutdown::Both);
         }
     }
     Ok(Stream::new(
         TcpStream::connect((ip, port as u16))
             .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?,
-        close_tcp
+        close_tcp,
     ))
 }
 

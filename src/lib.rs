@@ -46,7 +46,8 @@ pub fn start_file_in_runtime(path: &str) -> Result<Stack, Error> {
 #[macro_export]
 macro_rules! require_on_stack {
     ($name:tt, $type:tt, $stack:expr, $fn:literal) => {
-        let Value::$type($name) = $stack.pop().lock_ro().native.clone() else {
+        let Value::$type($name)
+            = $stack.pop().lock_ro().native.clone() else {
             return $stack.err(ErrorKind::InvalidCall($fn.to_owned()))
         };
     };
@@ -54,7 +55,8 @@ macro_rules! require_on_stack {
 #[macro_export]
 macro_rules! require_int_on_stack {
     ($name:tt, $stack:expr, $fn:literal) => {
-        let Value::Int($name) = $stack.pop().lock_ro().native.clone().try_mega_to_int() else {
+        let Value::Int($name)
+            = $stack.pop().lock_ro().native.clone().try_mega_to_int() else {
             return $stack.err(ErrorKind::InvalidCall($fn.to_owned()))
         };
     };
@@ -62,7 +64,8 @@ macro_rules! require_int_on_stack {
 #[macro_export]
 macro_rules! require_array {
     ($name:tt, $array:expr, $stack:expr, $fn:literal) => {
-        let Value::Array(ref $name) = $array.lock_ro().native else {
+        let Value::Array(ref $name)
+            = $array.lock_ro().native else {
             return $stack.err(ErrorKind::InvalidCall($fn.to_owned()))
         };
     };
@@ -70,7 +73,8 @@ macro_rules! require_array {
 #[macro_export]
 macro_rules! require_mut_array {
     ($name:tt, $array:expr, $stack:expr, $fn:literal) => {
-        let Value::Array(ref mut $name) = $array.lock().native else {
+        let Value::Array(ref mut $name)
+            = $array.lock().native else {
             return $stack.err(ErrorKind::InvalidCall($fn.to_owned()))
         };
     };

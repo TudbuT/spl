@@ -8,9 +8,13 @@ func println { |
     print "\n" print
 }
 
-{ any | with type ;
-    null clone type settype "construct" dyn-objcall
-} "new" "str" dyn-def-method
+construct _str_ext {
+    ;
+    new { any | with this ;
+        null clone this settype "construct" dyn-objcall
+    }
+    to-bytes { [int] | str-to-bytes }
+} include _str_ext in str
 
 construct _mega-ext {
     ;
@@ -51,6 +55,7 @@ construct _array-ext {
         def i 0 =i
         while { i this:len lt } { i this:get callable call i ++ =i }
     }
+    to-str { str | bytes-to-str }
     0 { any | with this ;
         0 this:get
     }
