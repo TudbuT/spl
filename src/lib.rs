@@ -60,20 +60,32 @@ macro_rules! require_int_on_stack {
     };
 }
 #[macro_export]
-macro_rules! require_array_on_stack {
-    ($name:tt, $stack:expr, $fn:literal) => {
-        let _binding = $stack.pop();
-        let Value::Array(ref $name) = _binding.lock_ro().native else {
+macro_rules! require_array {
+    ($name:tt, $array:expr, $stack:expr, $fn:literal) => {
+        let Value::Array(ref $name) = $array.lock_ro().native else {
             return $stack.err(ErrorKind::InvalidCall($fn.to_owned()))
         };
     };
 }
 #[macro_export]
-macro_rules! require_mut_array_on_stack {
-    ($name:tt, $stack:expr, $fn:literal) => {
-        let _binding = $stack.pop();
-        let Value::Array(ref mut $name) = _binding.lock().native else {
+macro_rules! require_mut_array {
+    ($name:tt, $array:expr, $stack:expr, $fn:literal) => {
+        let Value::Array(ref mut $name) = $array.lock().native else {
             return $stack.err(ErrorKind::InvalidCall($fn.to_owned()))
         };
+    };
+}
+#[macro_export]
+macro_rules! require_array_on_stack {
+    ($name:tt, $stack:expr, $fn:literal) => {
+        let binding = $stack.pop();
+        require_array!($name, binding, $stack, $fn)
+    };
+}
+#[macro_export]
+macro_rules! require_mut_array_on_stack {
+    ($name:tt, $stack:expr, $fn:literal) => {
+        let binding = $stack.pop();
+        require_mut_array!($name, binding, $stack, $fn)
     };
 }

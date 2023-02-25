@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{OpenOptions, File},
+    fs::{OpenOptions},
     io::Read,
     io::Write,
     mem,
@@ -10,7 +10,7 @@ use std::{
 
 use once_cell::sync::Lazy;
 
-use crate::{mutex::Mut, runtime::*, type_err, require_on_stack, require_int_on_stack, require_array_on_stack, require_mut_array_on_stack};
+use crate::{mutex::Mut, runtime::*, *};
 
 static STREAM_TYPES: Lazy<Arc<Mut<HashMap<String, StreamType>>>> =
     Lazy::new(|| Arc::new(Mut::new(HashMap::new())));
@@ -187,46 +187,54 @@ pub fn write_all_stream(stack: &mut Stack) -> OError {
 
 pub fn read_stream(stack: &mut Stack) -> OError {
     require_on_stack!(id, Mega, stack, "read-stream");
-    require_mut_array_on_stack!(a, stack, "read-stream");
-    let stream = runtime(|rt| {
-        rt.get_stream(id as u128)
-            .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
-    })?;
-    let mut vec = vec![0; a.len()];
-    stack.push(
-        Value::Mega(
-            stream
-                .lock()
-                .read(&mut vec[..])
-                .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))? as i128,
-        )
-        .spl(),
-    );
-    a.clone_from_slice(
-        &vec.into_iter()
-            .map(|x| Value::Int(x as i32).spl())
-            .collect::<Vec<_>>(),
-    );
+    let array = stack.pop();
+    {
+        require_mut_array!(a, array, stack, "read-stream");
+        let stream = runtime(|rt| {
+            rt.get_stream(id as u128)
+                .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
+        })?;
+        let mut vec = vec![0; a.len()];
+        stack.push(
+            Value::Mega(
+                stream
+                    .lock()
+                    .read(&mut vec[..])
+                    .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))? as i128,
+            )
+            .spl(),
+        );
+        a.clone_from_slice(
+            &vec.into_iter()
+                .map(|x| Value::Int(x as i32).spl())
+                .collect::<Vec<_>>(),
+        );
+    }
+    stack.push(array);
     Ok(())
 }
 
 pub fn read_all_stream(stack: &mut Stack) -> OError {
     require_on_stack!(id, Mega, stack, "read-all-stream");
-    require_mut_array_on_stack!(a, stack, "read-all-stream");
-    let stream = runtime(|rt| {
-        rt.get_stream(id as u128)
-            .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
-    })?;
-    let mut vec = vec![0; a.len()];
-    stream
-        .lock()
-        .read_exact(&mut vec[..])
-        .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?;
-    a.clone_from_slice(
-        &vec.into_iter()
-            .map(|x| Value::Int(x as i32).spl())
-            .collect::<Vec<_>>(),
-    );
+    let array = stack.pop();
+    {
+        require_mut_array!(a, array, stack, "read-all-stream");
+        let stream = runtime(|rt| {
+            rt.get_stream(id as u128)
+                .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
+        })?;
+        let mut vec = vec![0; a.len()];
+        stream
+            .lock()
+            .read_exact(&mut vec[..])
+            .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?;
+        a.clone_from_slice(
+            &vec.into_iter()
+                .map(|x| Value::Int(x as i32).spl())
+                .collect::<Vec<_>>(),
+        );
+    }
+    stack.push(array);
     Ok(())
 }
 
