@@ -39,7 +39,28 @@ pub fn dyn_construct(stack: &mut Stack) -> OError {
         return stack.err(ErrorKind::InvalidCall("dyn-construct".to_owned()))
     };
     Words {
-        words: vec![Word::Key(Keyword::Construct(s, Vec::new(), Vec::new()))],
+        words: vec![Word::Key(Keyword::Construct(
+            s,
+            Vec::new(),
+            Vec::new(),
+            false,
+        ))],
+    }
+    .exec(stack)?;
+    Ok(())
+}
+
+pub fn dyn_namespace(stack: &mut Stack) -> OError {
+    let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("dyn-construct".to_owned()))
+    };
+    Words {
+        words: vec![Word::Key(Keyword::Construct(
+            s,
+            Vec::new(),
+            Vec::new(),
+            true,
+        ))],
     }
     .exec(stack)?;
     Ok(())
@@ -245,11 +266,12 @@ pub(crate) fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 14] = [
+    let fns: [(&str, Fn, u32); 15] = [
         ("dyn-__dump", dyn_dump, 0),
         ("dyn-def", dyn_def, 0),
         ("dyn-func", dyn_func, 0),
         ("dyn-construct", dyn_construct, 0),
+        ("dyn-namespace", dyn_namespace, 0),
         ("dyn-def-field", dyn_def_field, 0),
         ("dyn-def-method", dyn_def_method, 0),
         ("dyn-include", dyn_include, 0),

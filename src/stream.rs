@@ -4,7 +4,7 @@ use std::{
     io::Read,
     io::Write,
     mem,
-    net::{Shutdown, TcpStream},
+    net::{Shutdown, TcpStream, UdpSocket},
     sync::Arc,
 };
 
@@ -187,6 +187,19 @@ pub fn write_all_stream(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn flush_stream(stack: &mut Stack) -> OError {
+    require_on_stack!(id, Mega, stack, "flush-stream");
+    let stream = runtime(|rt| {
+        rt.get_stream(id as u128)
+            .ok_or_else(|| stack.error(ErrorKind::VariableNotFound(format!("__stream-{id}"))))
+    })?;
+    stream
+        .lock()
+        .flush()
+        .map_err(|x| stack.error(ErrorKind::IO(format!("{x:?}"))))?;
+    Ok(())
+}
+
 pub fn read_stream(stack: &mut Stack) -> OError {
     require_on_stack!(id, Mega, stack, "read-stream");
     let array = stack.pop();
@@ -285,18 +298,48 @@ fn stream_tcp(stack: &mut Stack) -> Result<Stream, Error> {
     ))
 }
 
+fn stream_udp(stack: &mut Stack) -> Result<Stream, Error> {
+    require_int_on_stack!(port, stack, "UDP new-stream");
+    require_on_stack!(ip, Str, stack, "UDP new-stream");
+    require_int_on_stack!(self_port, stack, "UDP new-stream");
+    require_on_stack!(self_ip, Str, stack, "UDP new-stream");
+    fn close_udp(_stream: &mut Stream) {}
+    let sock = UdpSocket::bind((self_ip, self_port as u16))
+        .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?;
+    sock.connect((ip, port as u16))
+        .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?;
+    struct UdpRW(UdpSocket);
+    impl Write for UdpRW {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.send(buf)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl Read for UdpRW {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.0.recv(buf)
+        }
+    }
+    Ok(Stream::new(UdpRW(sock), close_udp))
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     if !*IS_INITIALIZED.lock_ro() {
         register_stream_type("file", stream_file);
         register_stream_type("tcp", stream_tcp);
+        register_stream_type("udp", stream_udp);
         *IS_INITIALIZED.lock() = true;
     }
 
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 6] = [
+    let fns: [(&str, Fn, u32); 7] = [
         ("new-stream", new_stream, 1),
         ("write-stream", write_stream, 1),
         ("write-all-stream", write_all_stream, 0),
+        ("flush-stream", flush_stream, 0),
         ("read-stream", read_stream, 1),
         ("read-all-stream", read_all_stream, 0),
         ("close-stream", close_stream, 0),

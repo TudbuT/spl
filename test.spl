@@ -1,5 +1,6 @@
 
 "stream.spl" import
+"http.spl" import
 
 func main { int | with args ;
     def thing
@@ -8,7 +9,7 @@ func main { int | with args ;
 
     "hi" 0 thing:unwrap:set;
 
-    def thing2 thing:unwrap List:new =thing2
+    def thing2 thing:unwrap List:new:from =thing2
 
     "world" thing2:unwrap:push
     "hello" 0 thing2:unwrap:insert
@@ -80,18 +81,17 @@ func main { int | with args ;
     "" println
     "testing MicroMap" println
     
-    def map null MicroMap:new =map
+    def map MicroMap:new =map
     "hey" "hello" map:set;
     "helloworld" "Hello, World" map:set;
     "{ " print
-    map:iter
-        { | with item ;
-            "'" print
-            0 item:get print
-            "': '" print 
-            1 item:get print
-            "', " print
-        } swap:foreach
+    { | with item ;
+        "'" print
+        0 item:get print
+        "': '" print 
+        1 item:get print
+        "', " print
+    } map:foreach
     "}" println
 
     "" println
@@ -107,6 +107,11 @@ func main { int | with args ;
     "hi\n" _:to-bytes file:write-exact; 
     file:close null =file
     
+    "" println
+
+    "testing http" println
+    def req "tudbut.de" 80 "GET" "/" http:Request:new =req
+    req:send
     "" println
 
     100

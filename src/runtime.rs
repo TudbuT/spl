@@ -360,6 +360,7 @@ impl Frame {
 pub struct Stack {
     frames: Vec<Arc<Frame>>,
     object_stack: Vec<AMObject>,
+    files: Vec<String>,
     pub return_accumultor: u32,
 }
 
@@ -394,6 +395,7 @@ impl Stack {
         let mut r = Stack {
             frames: vec![o.clone()],
             object_stack: Vec::new(),
+            files: Vec::new(),
             return_accumultor: 0,
         };
 
@@ -409,6 +411,7 @@ impl Stack {
         let mut r = Stack {
             frames: vec![o.clone()],
             object_stack: Vec::new(),
+            files: Vec::new(),
             return_accumultor: 0,
         };
 
@@ -591,6 +594,15 @@ impl Stack {
     pub unsafe fn push_frame(&mut self, frame: Arc<Frame>) {
         self.frames.push(frame);
     }
+
+    pub(crate) fn include_file(&mut self, s: &String) -> bool {
+        if self.files.contains(s) {
+            false
+        } else {
+            self.files.push(s.to_owned());
+            true
+        }
+    }
 }
 
 /// An SPL keyword. Used to deviate from normal linear code structure.
@@ -621,7 +633,7 @@ pub enum Keyword {
     /// equivalent to
     /// "<name>" dyn-construct; "<field>" "<name>" dyn-def-field { <rem> | <words> } "<fn-name>"
     /// "<name>" dyn-def-method
-    Construct(String, Vec<String>, Vec<(String, (u32, Words))>),
+    Construct(String, Vec<String>, Vec<(String, (u32, Words))>, bool),
     /// include <typeA> in <typeB>
     ///
     /// Adds <typeA> as a parent type of <typeB>.
@@ -949,6 +961,19 @@ impl Object {
             Value::Str(x) => !x.is_empty(),
         }
     }
+
+    pub fn field(&self, name: &str, stack: &mut Stack) -> Result<AMObject, Error> {
+        Ok(self
+            .property_map
+            .get(name)
+            .ok_or_else(|| {
+                stack.error(ErrorKind::PropertyNotFound(
+                    self.kind.lock_ro().name.to_owned(),
+                    name.to_owned(),
+                ))
+            })?
+            .clone())
+    }
 }
 
 impl From<Value> for Object {
@@ -1025,38 +1050,55 @@ impl Words {
                             name,
                         }),
                     ),
-                    Keyword::Construct(name, fields, methods) => {
+                    Keyword::Construct(name, fields, methods, is_namespace) => {
                         let origin = stack.get_frame();
-                        stack.define_var(name.clone());
-                        stack.set_var(
-                            name.clone(),
-                            Value::Str(
-                                runtime_mut(move |mut rt| {
-                                    rt.make_type(name.clone(), move |mut t| {
-                                        for field in fields {
-                                            t.add_property(field, origin.clone())?;
-                                        }
-                                        t.functions.extend(methods.into_iter().map(|(k, v)| {
-                                            (
-                                                k.clone(),
-                                                Arc::new(Func {
-                                                    ret_count: v.0,
-                                                    to_call: FuncImpl::SPL(v.1),
-                                                    origin: origin.clone(),
-                                                    run_as_base: false,
-                                                    fname: None,
-                                                    name: name.clone() + ":" + &k,
-                                                }),
-                                            )
-                                        }));
-                                        Ok(t)
-                                    })
-                                })?
-                                .lock_ro()
-                                .get_name(),
-                            )
-                            .spl(),
-                        )?;
+                        if !name.contains(':') {
+                            stack.define_var(name.clone());
+                        }
+                        let t = runtime_mut(|mut rt| {
+                            rt.make_type(name.clone(), |mut t| {
+                                for field in fields {
+                                    t.add_property(field, origin.clone())?;
+                                }
+                                t.functions.extend(methods.into_iter().map(|(k, v)| {
+                                    (
+                                        k.clone(),
+                                        Arc::new(Func {
+                                            ret_count: v.0,
+                                            to_call: FuncImpl::SPL(v.1),
+                                            origin: origin.clone(),
+                                            run_as_base: false,
+                                            fname: None,
+                                            name: name.clone() + ":" + &k,
+                                        }),
+                                    )
+                                }));
+                                Ok(t)
+                            })
+                        })?;
+
+                        let to_set: Object = if is_namespace {
+                            let mut obj: Object = Value::Null.into();
+                            obj.kind = t.clone();
+                            t.lock_ro().write_into(&mut obj);
+                            obj
+                        } else {
+                            Value::Str(t.lock_ro().get_name()).into()
+                        };
+                        if name.contains(':') {
+                            let Some((a, mut name)) = name.split_once(':') else { unreachable!() };
+                            let mut f = stack.get_var(a.to_owned())?;
+                            while let Some((a, b)) = name.split_once(':') {
+                                name = b;
+                                let o = f.lock_ro();
+                                let nf = o.field(a, stack)?;
+                                mem::drop(o);
+                                f = nf;
+                            }
+                            *f.lock_ro().field(name, stack)?.lock() = to_set;
+                        } else {
+                            stack.set_var(name.clone(), to_set.spl())?;
+                        }
                     }
                     Keyword::Include(ta, tb) => {
                         let rstack = &stack;

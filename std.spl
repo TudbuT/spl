@@ -11,7 +11,7 @@ func println { |
 construct _str_ext {
     ;
     new { any | with this ;
-        null clone this settype "construct" dyn-objcall
+        null clone this settype:construct
     }
     to-bytes { [int] | str-to-bytes }
 } include _str_ext in str
@@ -56,6 +56,9 @@ construct _array-ext {
         while { i this:len lt } { i this:get callable call i ++ =i }
     }
     to-str { str | bytes-to-str }
+    sub { [any] | with begin end this ;
+        this (end begin - anew) begin 0 (end begin -) acopy
+    }
     0 { any | with this ;
         0 this:get
     }
@@ -78,14 +81,22 @@ construct _array-ext {
 construct List {
     array
     ;
-    construct { this | with array this ; 
+    construct { this | with this ; 
+        0 anew this:=array
+        this
+    }
+    from { this | with array this ;
         array this:=array
         this
     }
+    foreach { | _:array:foreach }
     get { any | _:array:get }
     sget { any|null | _:array:sget }
     len { mega | _:array:len }
     set { any | _:array:set }
+    to-stack { .. | _:array:to-stack }
+    to-str { str | _:array:to-str }
+    sub { [any] | _:array:sub }
 }
 construct _GrowingArray {
     ;
@@ -159,11 +170,12 @@ include _IterableArray in array
 construct MicroMap {
     pairs
     ;
-    construct { this | with pairs this ;
-        pairs null eq if {
-            0 anew List:new =pairs
-        }
-        pairs:unwrap this:=pairs
+    construct { this | with this ;
+        List:new this:=pairs
+        this
+    }
+    from { this | with pairs this ;
+        pairs this:=pairs
         this
     }
     get-entry { [any,any]|null | with key this ;
@@ -189,11 +201,14 @@ construct MicroMap {
         this:pairs:iter
             { mega | 0 swap:get key eq not } swap:filter
             _:collect
-            List:new
+            List:new:from
             =pairs
     }
     iter { ArrayIter | with this ;
         this:pairs:iter
+    }
+    foreach { | with callable this ;
+        callable this:pairs:foreach
     }
 }
 
@@ -246,24 +261,12 @@ include _Iter in RangeIter
 
 construct shadow { }
 
-"Copy array";
-func acopy { array | with arr1 arr2 idx1 idx2 len ;
-
-    def i 0 =i
-    while { i len lt } {
-        (( i idx1 + ) arr1:get) (i idx2 +) arr2:set;
-        i ++ =i
-    }
-
-    arr2
-}
-
 func aadd { array | with arr1 arr2 ;
 
     def newarr arr1:len arr2:len + anew =newarr
 
-    arr1 newarr 0 0        arr1:len acopy =newarr
-    arr2 newarr 0 arr1:len arr2:len acopy =newarr
+    arr1 newarr 0 0        arr1:len acopy;
+    arr2 newarr 0 arr1:len arr2:len acopy;
 
     newarr
 }
@@ -281,8 +284,8 @@ func panic { | with msg ;
     { | with it ; 
         it println 
     } trace:foreach 
-    "Panic message:" println
-    "  " print msg println
+    "\nPanic message:" println
+    "    " print msg println
     def map env =map
     "SPL_PANIC_DUMP" env:get dup if {
         "Dumping because SPL_PANIC_DUMP is set." println
@@ -332,7 +335,7 @@ func ] { array |
 }
 
 func env { MicroMap |
-    get-env List:new MicroMap:new
+    get-env List:new:from MicroMap:new:from
 }
 
 func ++ { mega |

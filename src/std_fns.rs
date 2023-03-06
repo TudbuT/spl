@@ -4,11 +4,17 @@ use std::{
     fs,
     io::{stdin, stdout, Write},
     mem,
+    ops::{Add, Div, Mul, Rem, Sub},
     process::{self, Stdio},
     sync::Arc,
 };
 
-use crate::{dyn_fns, mutex::Mut, runtime::*, *};
+use crate::{
+    dyn_fns,
+    mutex::Mut,
+    runtime::*,
+    *,
+};
 
 #[macro_export]
 macro_rules! type_err {
@@ -185,14 +191,30 @@ pub fn or(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+macro_rules! impl_op {
+    ($a:expr, $b:expr, $op:tt, $err:expr, $($kind:tt,)*) => {
+        match ($a, $b) {
+            $(
+                (Value::$kind(a), Value::$kind(b)) => Value::$kind(a.$op(b)),
+            )*
+            _ => $err?,
+        }
+    };
+}
+
 pub fn plus(stack: &mut Stack) -> OError {
     let b = stack.pop().lock_ro().native.clone();
     let a = stack.pop().lock_ro().native.clone();
     stack.push(
-        match (a, b) {
-            (Value::Mega(a), Value::Mega(b)) => Value::Mega(a + b),
-            _x => stack.err(ErrorKind::InvalidCall("plus".to_owned()))?,
-        }
+        impl_op!(
+            a,
+            b,
+            add,
+            stack.err(ErrorKind::InvalidCall("plus".to_owned())),
+            Mega,
+            Long,
+            Int,
+        )
         .spl(),
     );
     Ok(())
@@ -202,10 +224,15 @@ pub fn minus(stack: &mut Stack) -> OError {
     let b = stack.pop().lock_ro().native.clone();
     let a = stack.pop().lock_ro().native.clone();
     stack.push(
-        match (a, b) {
-            (Value::Mega(a), Value::Mega(b)) => Value::Mega(a - b),
-            _ => todo!(),
-        }
+        impl_op!(
+            a,
+            b,
+            sub,
+            stack.err(ErrorKind::InvalidCall("minus".to_owned())),
+            Mega,
+            Long,
+            Int,
+        )
         .spl(),
     );
     Ok(())
@@ -215,10 +242,15 @@ pub fn slash(stack: &mut Stack) -> OError {
     let b = stack.pop().lock_ro().native.clone();
     let a = stack.pop().lock_ro().native.clone();
     stack.push(
-        match (a, b) {
-            (Value::Mega(a), Value::Mega(b)) => Value::Mega(a / b),
-            _ => todo!(),
-        }
+        impl_op!(
+            a,
+            b,
+            div,
+            stack.err(ErrorKind::InvalidCall("slash".to_owned())),
+            Mega,
+            Long,
+            Int,
+        )
         .spl(),
     );
     Ok(())
@@ -228,10 +260,15 @@ pub fn star(stack: &mut Stack) -> OError {
     let b = stack.pop().lock_ro().native.clone();
     let a = stack.pop().lock_ro().native.clone();
     stack.push(
-        match (a, b) {
-            (Value::Mega(a), Value::Mega(b)) => Value::Mega(a * b),
-            _ => todo!(),
-        }
+        impl_op!(
+            a,
+            b,
+            mul,
+            stack.err(ErrorKind::InvalidCall("star".to_owned())),
+            Mega,
+            Long,
+            Int,
+        )
         .spl(),
     );
     Ok(())
@@ -241,10 +278,15 @@ pub fn percent(stack: &mut Stack) -> OError {
     let b = stack.pop().lock_ro().native.clone();
     let a = stack.pop().lock_ro().native.clone();
     stack.push(
-        match (a, b) {
-            (Value::Mega(a), Value::Mega(b)) => Value::Mega(a % b),
-            _ => todo!(),
-        }
+        impl_op!(
+            a,
+            b,
+            rem,
+            stack.err(ErrorKind::InvalidCall("star".to_owned())),
+            Mega,
+            Long,
+            Int,
+        )
         .spl(),
     );
     Ok(())
@@ -589,18 +631,26 @@ pub fn import(stack: &mut Stack) -> OError {
             + "/"
             + &s;
     }
-    stack.push(Value::Str(s).spl());
-    dup(stack)?;
-    read_file(stack).or_else(|x| {
-        if let Some(fallback) = fallback {
-            stack.push(Value::Str(fallback.to_owned()).spl());
-            Ok(())
-        } else {
-            Err(x)
-        }
-    })?;
-    dyn_fns::wrap(dyn_fns::dyn_readf)(stack)?;
-    call(stack)?;
+    if stack.include_file(
+        &(*fs::canonicalize(s.clone())
+            .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?
+            .as_os_str()
+            .to_string_lossy())
+        .to_owned(),
+    ) {
+        stack.push(Value::Str(s).spl());
+        dup(stack)?;
+        read_file(stack).or_else(|x| {
+            if let Some(fallback) = fallback {
+                stack.push(Value::Str(fallback.to_owned()).spl());
+                Ok(())
+            } else {
+                Err(x)
+            }
+        })?;
+        dyn_fns::wrap(dyn_fns::dyn_readf)(stack)?;
+        call(stack)?;
+    }
     Ok(())
 }
 
@@ -710,9 +760,33 @@ pub fn bytes_to_str(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn acopy(stack: &mut Stack) -> OError {
+    require_on_stack!(len, Mega, stack, "acopy");
+    require_on_stack!(idx_dest, Mega, stack, "acopy");
+    require_on_stack!(idx_src, Mega, stack, "acopy");
+    let dest_array = stack.pop();
+    {
+        require_mut_array!(dest, dest_array, stack, "acopy");
+        require_array_on_stack!(src, stack, "acopy");
+        let offset = idx_dest - idx_src;
+        if (src.len() as i128) < idx_src + len
+            || idx_src < 0
+            || (dest.len() as i128) < idx_dest + len
+            || idx_dest < 0
+        {
+            stack.err(ErrorKind::InvalidCall("acopy".to_owned()))?;
+        }
+        for i in idx_src..idx_src + len {
+            *dest.get_mut((i + offset) as usize).unwrap() = src.get(i as usize).unwrap().clone();
+        }
+    }
+    stack.push(dest_array);
+    Ok(())
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 48] = [
+    let fns: [(&str, Fn, u32); 49] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -761,6 +835,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("command-wait", command_wait, 1),
         ("str-to-bytes", str_to_bytes, 1),
         ("bytes-to-str", bytes_to_str, 1),
+        ("acopy", acopy, 1),
     ];
     for f in fns {
         r.define_func(

@@ -6,7 +6,7 @@ endif
 syn match Comment /".*?";/
 syn match Number /\<[0-9._]*\>/
 syn match Function /\<func[ \n]\+[^ ]\+[ \n]\+{ .*[ ]*|\|{ .*[ ]*|\|{\|}/
-syn keyword Keyword while if exit eq lt gt neg or and not + - * ++ -- % / with
+syn keyword Keyword while if exit eq lt gt neg or and not + - * ++ -- % / with namespace
 syn match Keyword /;/
 syn keyword Type pop dup swap
 syn match Type /=[a-zA-Z0-9_\-]\+\|\<_[a-zA-Z0-9_\-]\+\>/

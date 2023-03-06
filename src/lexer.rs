@@ -64,6 +64,12 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
             }
             "construct" => {
                 let name = str_words[i + 1].to_owned();
+                let is_namespace = if str_words[i + 2] == "namespace" {
+                    i += 1;
+                    true
+                } else {
+                    false
+                };
                 if str_words[i + 2] != "{" {
                     return Err(LexerError::InvalidConstructBlock);
                 }
@@ -91,10 +97,15 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                         i += 1;
                     }
                 }
-                if !has_construct {
+                if !has_construct && !is_namespace {
                     methods.push(("construct".to_string(), (1, Words { words: vec![] })));
                 }
-                words.push(Word::Key(Keyword::Construct(name, fields, methods)));
+                words.push(Word::Key(Keyword::Construct(
+                    name,
+                    fields,
+                    methods,
+                    is_namespace,
+                )));
             }
             "include" => {
                 if let Some(x) = readf(

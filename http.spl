@@ -1,0 +1,77 @@
+"stream.spl" import
+
+construct http namespace {
+    Request
+    Response
+}
+
+construct http:Request {
+    host port
+    method path
+    headers
+    body
+    ;
+    construct { this | with host port method path this ;
+        host this:=host
+        port this:=port
+        method this:=method
+        path this:=path
+        List:new this:=headers
+        "" this:=body
+        this
+    }
+    add-header { this | with header this ;
+        header this:headers:push
+        this
+    }
+    set-body { this | with body this ;
+        body this:=body
+        this
+    }
+    send { http:Response | with this ;
+        def stream this:host this:port StreamTypes:tcp:create =stream
+        def response http:Response:new =response
+
+        this:method:to-bytes stream:write-exact;
+        " " _:to-bytes stream:write-exact;
+        this:path:to-bytes stream:write-exact;
+        " HTTP/1.0\r\n" _:to-bytes stream:write-exact;
+
+        "Host: " _:to-bytes stream:write-exact;
+        this:host:to-bytes stream:write-exact;
+        "\r\nConnection: Close\r\nUser-Agent: http.spl v0.1 2023-03 (spl@mail.tudbut.de)\r\n"
+            _:to-bytes stream:write-exact;
+
+        { | with header ;
+            header:to-bytes stream:write-exact;
+            "\r\n" stream:write-exact;
+        } this:headers:foreach
+
+        "Content-Length: " _:to-bytes stream:write-exact;
+        def body this:body:to-bytes =body
+        body:len _str:to-bytes stream:write-exact;
+        "\r\n\r\n" _:to-bytes stream:write-exact;
+        
+        body stream:write-exact;
+        stream:flush;
+
+        1024 stream:read-to-end:to-str println
+
+        stream:close;
+
+        "todo" panic
+    }
+}
+
+construct http:Response {
+    state-num state-msg
+    headers
+    body
+    ;
+    construct { this | with this ;
+        List:new this:=headers
+        "" this:=body
+        this
+    }
+}
+

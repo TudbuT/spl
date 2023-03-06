@@ -101,7 +101,7 @@ construct ReduceIter {
         } =itm
         this:accumulator null eq if {
             itm dup this:=accumulator
-            null 2 stop
+            2 stop
         }
         this:accumulator itm this:reduce-function call dup this:=accumulator
     }
@@ -165,7 +165,7 @@ construct ChainIter {
     next-iters
     ;
     construct { this | with other origin this ;
-        [ other ] List:new this:=next-iters
+        [ other ] List:new:from this:=next-iters
         origin this:=current
         this
     }

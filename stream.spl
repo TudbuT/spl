@@ -21,19 +21,31 @@ construct Stream {
     }
     "the buffer is written to in-place.";
     read { mega [int] | with buf this ;
-        buf gettype "int" eq if { buf anew =buf }
+        buf gettype "mega" eq if { buf anew =buf }
         buf this:id read-stream buf
     }
     "the buffer is written to in-place.";
     read-exact { [int] | with buf this ;
-        buf gettype "int" eq if { buf anew =buf }
+        buf gettype "mega" eq if { buf anew =buf }
         buf this:id read-all-stream buf
+    }
+    read-to-end { [int] | with buf this ;
+        def full 0 anew =full
+        buf gettype "mega" eq if { buf anew =buf }
+        def read
+        while { buf this:id read-stream pop _mega dup =read } {
+            full (0 read buf:sub) aadd =full
+        }
+        full
     }
     write { mega | with buf this ;
         buf this:id write-stream
     }
     write-exact { | with buf this ;
         buf this:id write-all-stream
+    }
+    flush { | with this ;
+        this:id flush-stream
     }
     close { | with this ;
         this:id close-stream
@@ -71,6 +83,7 @@ func register-stream-type { | with id ;
 }
 
 "tcp" register-stream-type
+"udp" register-stream-type
 "file" register-stream-type
 
 func StreamTypes { _StreamType |
