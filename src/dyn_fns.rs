@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::{lexer, runtime::*};
+use crate::*;
 
 pub fn dyn_dump(stack: &mut Stack) -> OError {
     Words {
@@ -76,11 +77,8 @@ pub fn dyn_def_field(stack: &mut Stack) -> OError {
     ) else {
         return stack.err(ErrorKind::InvalidCall("dyn-def-field".to_owned()))
     };
-    runtime(|rt| rt.get_type_by_name(s.to_owned()))
-        .ok_or_else(|| Error {
-            kind: ErrorKind::TypeNotFound(s),
-            stack: stack.trace(),
-        })?
+    runtime(|rt| rt.get_type_by_name(&s))
+        .ok_or_else(|| stack.error(ErrorKind::TypeNotFound(s)))?
         .lock()
         .add_property(name, stack.get_frame())?;
     Ok(())
@@ -98,11 +96,8 @@ pub fn dyn_def_method(stack: &mut Stack) -> OError {
     ) else {
         return stack.err(ErrorKind::InvalidCall("dyn-def-method".to_owned()))
     };
-    runtime(|rt| rt.get_type_by_name(s.to_owned()))
-        .ok_or_else(|| Error {
-            kind: ErrorKind::TypeNotFound(s),
-            stack: stack.trace(),
-        })?
+    runtime(|rt| rt.get_type_by_name(&s))
+        .ok_or_else(|| stack.error(ErrorKind::TypeNotFound(s)))?
         .lock()
         .functions
         .insert(name, f);
@@ -214,10 +209,9 @@ pub fn dyn_read(stack: &mut Stack) -> OError {
     stack.push(
         Value::Func(AFunc::new(Func {
             ret_count: 0,
-            to_call: FuncImpl::SPL(lexer::lex(s).map_err(|x| Error {
-                kind: ErrorKind::LexError(format!("{x:?}")),
-                stack: stack.trace(),
-            })?),
+            to_call: FuncImpl::SPL(
+                lexer::lex(s).map_err(|x| stack.error(ErrorKind::LexError(format!("{x:?}"))))?,
+            ),
             run_as_base: false,
             origin: stack.get_frame(),
             fname: None,
@@ -241,10 +235,9 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
     stack.push(
         Value::Func(AFunc::new(Func {
             ret_count: 0,
-            to_call: FuncImpl::SPL(lexer::lex(s).map_err(|x| Error {
-                kind: ErrorKind::LexError(format!("{x:?}")),
-                stack: stack.trace(),
-            })?),
+            to_call: FuncImpl::SPL(
+                lexer::lex(s).map_err(|x| stack.error(ErrorKind::LexError(format!("{x:?}"))))?,
+            ),
             run_as_base: true,
             origin: stack.get_frame(),
             fname: Some(n),
@@ -253,6 +246,27 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
         .spl(),
     );
     Ok(())
+}
+
+pub fn dyn_catch(stack: &mut Stack) -> OError {
+    require_on_stack!(ctch, Func, stack, "dyn-catch");
+    require_on_stack!(blk, Func, stack, "dyn-catch");
+    require_on_stack!(types, Array, stack, "dyn-catch");
+    if let Err(e) = blk.to_call.call(stack) {
+        if types.is_empty() || types.contains(&e.kind.to_string().spl()) {
+            stack.push(e.spl());
+            ctch.to_call.call(stack)
+        } else {
+            Err(e)
+        }
+    } else {
+        Ok(())
+    }
+}
+
+pub fn dyn_use(stack: &mut Stack) -> OError {
+    require_on_stack!(item, Str, stack, "dyn-use");
+    Words::new(vec![Word::Key(Keyword::Use(item))]).exec(stack)
 }
 
 pub(crate) fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError {
@@ -266,7 +280,7 @@ pub(crate) fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 15] = [
+    let fns: [(&str, Fn, u32); 17] = [
         ("dyn-__dump", dyn_dump, 0),
         ("dyn-def", dyn_def, 0),
         ("dyn-func", dyn_func, 0),
@@ -282,6 +296,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("dyn-all-types", dyn_all_types, 1),
         ("dyn-read", dyn_read, 1),
         ("dyn-readf", dyn_readf, 1),
+        ("dyn-catch", dyn_catch, 0),
+        ("dyn-use", dyn_use, 0),
     ];
     for f in fns {
         r.define_func(

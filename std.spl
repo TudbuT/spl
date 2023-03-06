@@ -8,22 +8,57 @@ func println { |
     print "\n" print
 }
 
+construct error {
+    kind
+    message
+    object
+    trace
+    mr-trace
+}
+
+construct FrameInfo {
+    file
+    function
+}
+
 construct _str_ext {
     ;
     new { any | with this ;
         null clone this settype:construct
     }
     to-bytes { [int] | str-to-bytes }
+    split { str | with splitter this ;
+        def bytes splitter:to-bytes =bytes
+        def iter this:to-bytes:iter =iter
+        def item 0 =item
+        [ while { item null eq not } {
+            def match 0 =match
+            [
+                while { match bytes:len eq not } {
+                    iter:next =item
+                    item null eq if {
+                        3 stop
+                    }
+                    item dup (match bytes:get) eq dup if {
+                        match ++ =match
+                    } not if {
+                        0 =match
+                    }
+                } 
+                { | pop pop } match:foreach
+            ] _str
+        } ]
+    }
 } include _str_ext in str
 
 construct _mega-ext {
     ;
     swap { .. | with this ;
-        i mswap
-        i -- mswap
+        this mswap
+        this -- mswap
     }
     mswap { .. | mswap }
-    foreach { | with this ;
+    foreach { | with callable this ;
         def i 0 =i
         while { i this lt } { i callable call i ++ =i }
     }

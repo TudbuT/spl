@@ -31,7 +31,7 @@ construct _Iter {
     }
     join { str | with separator this ;
         { str | with accum item ;
-            accum _str separator item _str strconcat strconcat
+            accum _str separator item _str concat concat
         } this:reduce:calculate
     }
     filter { FilterIter | with filter this ;

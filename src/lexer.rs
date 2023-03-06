@@ -121,6 +121,11 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                 }
                 i += 3;
             }
+            "use" => {
+                let item = str_words[i + 1].to_owned();
+                i += 1;
+                words.push(Word::Key(Keyword::Use(item)));
+            }
             "while" => {
                 let cond = read_block(&str_words[i + 2..], false)?;
                 i += 2 + cond.2;
@@ -132,6 +137,18 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                 let blk = read_block(&str_words[i + 2..], false)?;
                 i += 2 + blk.2;
                 words.push(Word::Key(Keyword::If(blk.1)));
+            }
+            "catch" => {
+                let mut types = Vec::new();
+                i += 1;
+                while &str_words[i] != "{" {
+                    types.push(str_words[i].to_owned());
+                    i += 1;
+                }
+                let blk = read_block(&str_words[i..], false)?;
+                i += 2 + blk.2;
+                let ctch = read_block(&str_words[i..], false)?;
+                words.push(Word::Key(Keyword::Catch(types, blk.1, ctch.1)))
             }
             "with" => {
                 let mut vars = Vec::new();

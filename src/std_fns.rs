@@ -9,12 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    dyn_fns,
-    mutex::Mut,
-    runtime::*,
-    *,
-};
+use crate::{dyn_fns, mutex::Mut, runtime::*, *};
 
 #[macro_export]
 macro_rules! type_err {
@@ -77,7 +72,7 @@ pub fn settype(stack: &mut Stack) -> OError {
         return stack.err(ErrorKind::InvalidCall("settype".to_owned()))
     };
     let o = stack.pop();
-    let kind = runtime(|rt| rt.get_type_by_name(s.clone()))
+    let kind = runtime(|rt| rt.get_type_by_name(&s))
         .ok_or_else(|| stack.error(ErrorKind::TypeNotFound(s)))?;
     let mut obj = o.lock();
     kind.lock_ro().write_into(&mut obj);
@@ -485,31 +480,11 @@ pub fn trace(stack: &mut Stack) -> OError {
 
 pub fn mr_trace(stack: &mut Stack) -> OError {
     let trace = stack.mr_trace();
-    let kind = runtime(|rt| rt.get_type_by_name("TraceElement".to_owned()))
-        .ok_or_else(|| stack.error(ErrorKind::TypeNotFound("TraceElement".to_owned())))?;
     stack.push(
         Value::Array(
             trace
                 .into_iter()
-                .map(|x| {
-                    Value::Array(
-                        x.into_iter()
-                            .map(|x| {
-                                let item = Value::Null.spl();
-                                let mut obj = item.lock();
-                                kind.lock_ro().write_into(&mut obj);
-                                obj.kind = kind.clone();
-                                obj.property_map
-                                    .insert("file".to_owned(), Value::Str(x.file).spl());
-                                obj.property_map
-                                    .insert("function".to_owned(), Value::Str(x.function).spl());
-                                mem::drop(obj);
-                                item
-                            })
-                            .collect(),
-                    )
-                    .spl()
-                })
+                .map(|x| Value::Array(x.into_iter().map(|x| x.spl()).collect()).spl())
                 .collect(),
         )
         .spl(),
@@ -784,9 +759,14 @@ pub fn acopy(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn throw(stack: &mut Stack) -> OError {
+    let kind = ErrorKind::CustomObject(stack.pop());
+    stack.err(kind)
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 49] = [
+    let fns: [(&str, Fn, u32); 50] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -836,6 +816,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("str-to-bytes", str_to_bytes, 1),
         ("bytes-to-str", bytes_to_str, 1),
         ("acopy", acopy, 1),
+        ("throw", throw, 0),
     ];
     for f in fns {
         r.define_func(

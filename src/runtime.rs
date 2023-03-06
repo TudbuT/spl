@@ -46,6 +46,10 @@ pub fn runtime_mut<T>(f: impl FnOnce(RwLockWriteGuard<Runtime>) -> T) -> T {
     })
 }
 
+pub fn get_type(name: &str) -> Option<AMType> {
+    runtime(|rt| rt.get_type_by_name(name))
+}
+
 /// An SPL runtime.
 ///
 /// This holds:
@@ -99,8 +103,8 @@ impl Runtime {
         rt
     }
 
-    pub fn get_type_by_name(&self, name: String) -> Option<AMType> {
-        self.types_by_name.get(&name).cloned()
+    pub fn get_type_by_name(&self, name: &str) -> Option<AMType> {
+        self.types_by_name.get(name).cloned()
     }
 
     pub fn get_type_by_id(&self, id: u32) -> Option<AMType> {
@@ -166,7 +170,7 @@ impl SetRuntime for Arc<Mut<Runtime>> {
 }
 
 /// A frame's location in SPL code.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FrameInfo {
     pub file: String,
     pub function: String,
@@ -288,10 +292,7 @@ impl Frame {
             if let Some(ref x) = frame.parent {
                 frame = x;
             } else {
-                return Err(Error {
-                    kind: ErrorKind::VariableNotFound(name),
-                    stack: stack.trace(),
-                });
+                return Err(stack.error(ErrorKind::VariableNotFound(name)));
             }
         }
     }
@@ -305,10 +306,7 @@ impl Frame {
             if let Some(ref x) = frame.parent {
                 frame = x;
             } else {
-                return Err(Error {
-                    kind: ErrorKind::VariableNotFound(name),
-                    stack: stack.trace(),
-                });
+                return Err(stack.error(ErrorKind::VariableNotFound(name)));
             }
         }
     }
@@ -457,10 +455,7 @@ impl Stack {
             if let Some(ref x) = frame.parent {
                 frame = x;
             } else {
-                return Err(Error {
-                    kind: ErrorKind::FuncNotFound(name),
-                    stack: self.trace(),
-                });
+                return Err(self.error(ErrorKind::FuncNotFound(name)));
             }
         }
     }
@@ -553,6 +548,7 @@ impl Stack {
         Err(Error {
             kind,
             stack: self.trace(),
+            mr_stack: self.mr_trace(),
         })
     }
 
@@ -560,6 +556,7 @@ impl Stack {
         Error {
             kind,
             stack: self.trace(),
+            mr_stack: self.mr_trace(),
         }
     }
 
@@ -620,7 +617,7 @@ pub enum Keyword {
     /// def <name>
     ///
     /// Defines a variable.
-    /// equivalent to <name> dyn-def
+    /// equivalent to "<name>" dyn-def
     Def(String),
     /// func <name> { <rem> | <words> }
     ///
@@ -639,6 +636,10 @@ pub enum Keyword {
     /// Adds <typeA> as a parent type of <typeB>.
     /// equivalent to "<typeA>" "<typeB>" dyn-include
     Include(String, String),
+    /// use <path>:<item>
+    ///
+    /// equivalent to "<path>:<item>" dyn-use
+    Use(String),
     /// while { <wordsA> } { <wordsB> }
     ///
     /// If wordsA result in a truthy value being on the top of the stack, execute wordsB, and
@@ -656,6 +657,12 @@ pub enum Keyword {
     /// equivalent to def <...> =<...> def <item> =<item>
     /// or "<...>" dyn-def "=<...>" dyn-call "<item>" dyn-def "=<item>" dyn-call
     With(Vec<String>),
+    /// catch [<type> <...>] { <code> } with { <wordsOnCatch> }
+    ///
+    /// Catches errors that happen within <code>, running <wordsOnCatch> when an error is
+    /// encountered and the error is of <type> (or, if no type is specified, any error).
+    /// equivalent to \[ ["<type>" <...>] \] { | <code> } { | <wordsOnCatch> } dyn-catch
+    Catch(Vec<String>, Words, Words),
 }
 
 /// Any SPL value that is not a construct.
@@ -978,6 +985,34 @@ impl Object {
     }
 }
 
+impl From<String> for Object {
+    fn from(value: String) -> Self {
+        Value::Str(value).into()
+    }
+}
+
+impl From<FrameInfo> for Object {
+    fn from(value: FrameInfo) -> Self {
+        let mut obj = Object::new(
+            get_type("FrameInfo").expect("FrameInfo type must exist"),
+            Value::Null,
+        );
+        obj.property_map.insert("file".to_owned(), value.file.spl());
+        obj.property_map
+            .insert("function".to_owned(), value.function.spl());
+        obj
+    }
+}
+
+impl<T> From<Vec<T>> for Object
+where
+    T: Into<Object>,
+{
+    fn from(value: Vec<T>) -> Self {
+        Value::Array(value.into_iter().map(|x| x.spl()).collect()).into()
+    }
+}
+
 impl From<Value> for Object {
     fn from(value: Value) -> Self {
         Object::new(
@@ -1105,16 +1140,31 @@ impl Words {
                     Keyword::Include(ta, tb) => {
                         let rstack = &stack;
                         runtime(move |rt| {
-                            rt.get_type_by_name(tb.clone())
+                            rt.get_type_by_name(&tb)
                                 .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(tb)))?
                                 .lock()
                                 .parents
                                 .push(
-                                    rt.get_type_by_name(ta.clone())
+                                    rt.get_type_by_name(&ta)
                                         .ok_or_else(|| rstack.error(ErrorKind::TypeNotFound(ta)))?,
                                 );
                             Ok(())
                         })?;
+                    }
+                    Keyword::Use(item) => {
+                        if let Some((a, mut name)) = item.split_once(':') {
+                            let mut f = stack.get_var(a.to_owned())?;
+                            while let Some((a, b)) = name.split_once(':') {
+                                name = b;
+                                let o = f.lock_ro();
+                                let nf = o.field(a, stack)?;
+                                mem::drop(o);
+                                f = nf;
+                            }
+                            stack.define_var(name.to_owned());
+                            let o = f.lock_ro().field(name, stack)?.clone();
+                            stack.set_var(name.to_owned(), o)?;
+                        }
                     }
                     Keyword::While(cond, blk) => loop {
                         cond.exec(stack)?;
@@ -1123,12 +1173,23 @@ impl Words {
                         }
                         blk.exec(stack)?;
                         if stack.return_accumultor > 0 {
+                            stack.return_accumultor -= 1;
                             break;
                         }
                     },
                     Keyword::If(blk) => {
                         if stack.pop().lock_ro().is_truthy() {
                             blk.exec(stack)?;
+                        }
+                    }
+                    Keyword::Catch(types, blk, ctch) => {
+                        if let Err(e) = blk.exec(stack) {
+                            if types.is_empty() || types.contains(&e.kind.to_string()) {
+                                stack.push(e.spl());
+                                ctch.exec(stack)?;
+                            } else {
+                                return Err(e);
+                            }
                         }
                     }
                     Keyword::With(vars) => {
@@ -1186,9 +1247,8 @@ impl Words {
                     let f0 = o.kind.lock_ro();
                     let f = f0
                         .get_fn(x.clone())
-                        .ok_or_else(|| Error {
-                            kind: ErrorKind::MethodNotFound(f0.name.clone(), x.clone()),
-                            stack: stack.trace(),
+                        .ok_or_else(|| {
+                            stack.error(ErrorKind::MethodNotFound(f0.name.clone(), x.clone()))
                         })?
                         .clone();
                     if option_env!("SPLDEBUG").is_some() {
@@ -1254,11 +1314,31 @@ pub enum ErrorKind {
     CustomObject(AMObject),
 }
 
+impl Display for ErrorKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorKind::Parse(_, _) => f.write_str("Parse"),
+            ErrorKind::InvalidCall(_) => f.write_str("InvalidCall"),
+            ErrorKind::InvalidType(_, _) => f.write_str("InvalidType"),
+            ErrorKind::VariableNotFound(_) => f.write_str("VariableNotFound"),
+            ErrorKind::FuncNotFound(_) => f.write_str("FuncNotFound"),
+            ErrorKind::MethodNotFound(_, _) => f.write_str("MethodNotFound"),
+            ErrorKind::PropertyNotFound(_, _) => f.write_str("PropertyNotFound"),
+            ErrorKind::TypeNotFound(_) => f.write_str("TypeNotFound"),
+            ErrorKind::LexError(_) => f.write_str("LexError"),
+            ErrorKind::IO(_) => f.write_str("IO"),
+            ErrorKind::Custom(_) => f.write_str("Custom"),
+            ErrorKind::CustomObject(_) => f.write_str("CustomObject"),
+        }
+    }
+}
+
 /// Wrapper for ErrorKind with the stack trace.
 #[derive(PartialEq, Eq)]
 pub struct Error {
     pub kind: ErrorKind,
     pub stack: Vec<String>,
+    pub mr_stack: Vec<Vec<FrameInfo>>,
 }
 
 impl Debug for Error {
@@ -1269,5 +1349,30 @@ impl Debug for Error {
         f.write_str(self.stack.join("\n").as_str())?;
         f.write_str("\n\n")?;
         Ok(())
+    }
+}
+
+impl From<Error> for Object {
+    fn from(value: Error) -> Self {
+        let mut obj = Object::new(
+            get_type("error").expect("error type must exist"),
+            Value::Null,
+        );
+        obj.property_map
+            .insert("kind".to_owned(), value.kind.to_string().spl());
+        obj.property_map
+            .insert("message".to_owned(), format!("{:?}", value.kind).spl());
+        if let ErrorKind::CustomObject(ref o) = value.kind {
+            obj.property_map.insert("object".to_owned(), o.clone());
+        }
+        if let ErrorKind::Custom(ref s) = value.kind {
+            obj.property_map
+                .insert("message".to_owned(), s.clone().spl());
+        }
+        obj.property_map
+            .insert("trace".to_owned(), value.stack.spl());
+        obj.property_map
+            .insert("mr-trace".to_owned(), value.mr_stack.spl());
+        obj
     }
 }

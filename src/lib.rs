@@ -63,7 +63,7 @@ pub fn start_file_in_runtime(path: &str) -> Result<Stack, Error> {
     Ok(stack)
 }
 
-/// Inćlude the standard library in a runtime-stack-pair, where the runtime has been .set().
+/// Include the standard library in a runtime-stack-pair, where the runtime has been .set().
 pub fn add_std(stack: &mut Stack) -> OError {
     let f = find_in_splpath("std.spl");
     let words = lex(if let Ok(f) = f {
@@ -71,10 +71,7 @@ pub fn add_std(stack: &mut Stack) -> OError {
     } else {
         f.unwrap_err()
     })
-    .map_err(|x| Error {
-        kind: ErrorKind::LexError(format!("{x:?}")),
-        stack: Vec::new(),
-    })?;
+    .map_err(|x| stack.error(ErrorKind::LexError(format!("{x:?}"))))?;
     words.exec(stack)
 }
 
@@ -94,6 +91,7 @@ nofmt! {
             };
         };
     }
+
     #[macro_export]
     macro_rules! require_int_on_stack {
         ($name:tt, $stack:expr, $fn:literal) => {

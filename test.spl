@@ -108,10 +108,14 @@ func main { int | with args ;
     file:close null =file
     
     "" println
+    "testing split" println
+    { | println } (" " "hello how  are you" _:split):foreach
+    "" println
 
+    use net:http:Request
     "testing http" println
-    def req "tudbut.de" 80 "GET" "/" net:http:Request:new =req
-    req:send
+    def req "tudbut.de" 81 "GET" "/" Request:new =req
+    req:send:body _str println
     "" println
 
     100

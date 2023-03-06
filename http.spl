@@ -6,6 +6,7 @@
 construct net:http namespace {
     Request
     Response
+    help
 }
 
 construct net:http:Request {
@@ -58,22 +59,68 @@ construct net:http:Request {
         body stream:write-exact;
         stream:flush;
 
-        1024 stream:read-to-end:to-str println
+        def response 1024 stream:read-to-end =response
+
+        response net:http:Response:new:read-from-bytes
 
         stream:close;
+    }
+}
 
-        "todo" panic
+construct net:http:help namespace {
+    ;
+    assert-str { | with expected iter _ ;
+            [ { | pop iter:next } (expected _array):len:foreach ] _str
+            expected _str
+        eq not if {
+            "Expected " expected concat throw
+        }
+    }
+    until-str { str | with expected iter _ ;
+        def match 0 =match
+        def bytes expected:to-bytes =bytes
+        [
+            while { match bytes:len eq not } {
+                iter:next dup (match bytes:get) eq dup if {
+                    match ++ =match
+                } not if {
+                    0 =match
+                }
+            } 
+            { | pop pop } match:foreach
+        ] _str
     }
 }
 
 construct net:http:Response {
+    version
     state-num state-msg
     headers
     body
     ;
     construct { this | with this ;
-        List:new this:=headers
+        MicroMap:new this:=headers
         "" this:=body
         this
+    }
+    read-from-bytes { this | with bytes this ;
+        use net:http:help
+        bytes:iter =bytes
+        "HTTP/" bytes help:assert-str
+        " " bytes help:until-str this:=version
+        " " bytes help:until-str _mega this:=state-num
+        "\r\n" bytes help:until-str this:=state-msg
+        while { "\r\n" bytes help:until-str dup "" eq not } {
+            def iter ": " swap:split:iter =iter
+            (
+                iter:next ": "
+                iter:join 
+            ) this:headers:set;
+        } pop
+        0 ("Content-Length" this:headers:get _mega) bytes:collect:sub this:=body
+        this
+    }
+    content-type { str | with this ;
+        "Content-Type" this:headers:get
     }
 }
