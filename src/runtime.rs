@@ -833,7 +833,9 @@ impl Type {
             q.append(&mut VecDeque::from(t.lock_ro().parents.clone()));
         }
         for property in to_apply.into_iter().rev() {
-            object.property_map.insert(property, Value::Null.spl());
+            if !object.property_map.contains_key(&property) {
+                object.property_map.insert(property, Value::Null.spl());
+            }
         }
     }
 

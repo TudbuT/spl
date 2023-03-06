@@ -110,7 +110,7 @@ func main { int | with args ;
     "" println
 
     "testing http" println
-    def req "tudbut.de" 80 "GET" "/" http:Request:new =req
+    def req "tudbut.de" 80 "GET" "/" net:http:Request:new =req
     req:send
     "" println
 

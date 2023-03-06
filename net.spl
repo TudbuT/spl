@@ -1,0 +1,8 @@
+
+construct net namespace {
+    ;
+    register { | with name this ;
+        name "net" dyn-def-field;
+        this "net" settype =net
+    }
+}

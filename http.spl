@@ -1,11 +1,14 @@
 "stream.spl" import
+"net.spl" import
 
-construct http namespace {
+"http" net:register
+
+construct net:http namespace {
     Request
     Response
 }
 
-construct http:Request {
+construct net:http:Request {
     host port
     method path
     headers
@@ -28,9 +31,9 @@ construct http:Request {
         body this:=body
         this
     }
-    send { http:Response | with this ;
+    send { net:http:Response | with this ;
         def stream this:host this:port StreamTypes:tcp:create =stream
-        def response http:Response:new =response
+        def response net:http:Response:new =response
 
         this:method:to-bytes stream:write-exact;
         " " _:to-bytes stream:write-exact;
@@ -63,7 +66,7 @@ construct http:Request {
     }
 }
 
-construct http:Response {
+construct net:http:Response {
     state-num state-msg
     headers
     body
@@ -74,4 +77,3 @@ construct http:Response {
         this
     }
 }
-
