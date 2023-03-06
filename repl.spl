@@ -1,0 +1,26 @@
+
+func main { mega | with args ;
+    "REPL" =program-name
+    while { 1 } {
+        catch {
+            "  > " print readln dyn-read exec2 "\n" print
+        } 
+        with { with err ;
+            err:message dup null eq if {
+                pop
+                "Uncaught error."
+            } err:trace
+
+            with msg trace ;
+            program-name dup if {
+                program-name print " panicked at:" println
+            } not if {
+                "Program panicked at:" println
+            }
+            &println trace:foreach 
+            "\nPanic message:" println
+            "    " print msg println
+            "\nRecovering." println
+        }
+    }
+}

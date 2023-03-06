@@ -20,7 +20,12 @@ macro_rules! type_err {
 
 macro_rules! array {
     ($stack:expr, $i:expr) => {
-        || $stack.error(ErrorKind::PropertyNotFound("array".to_owned(), $i.to_string()))
+        || {
+            $stack.error(ErrorKind::PropertyNotFound(
+                "array".to_owned(),
+                $i.to_string(),
+            ))
+        }
     };
 }
 
@@ -511,12 +516,10 @@ pub fn exec(stack: &mut Stack) -> OError {
     };
     unsafe {
         let f = stack.pop_frame(0);
-        let f1 = stack.pop_frame(0);
-        a.to_call.call(stack)?;
-        stack.push_frame(f1);
+        let r = a.to_call.call(stack);
         stack.push_frame(f);
+        r
     }
-    Ok(())
 }
 
 pub fn exec2(stack: &mut Stack) -> OError {
@@ -526,13 +529,27 @@ pub fn exec2(stack: &mut Stack) -> OError {
     unsafe {
         let f = stack.pop_frame(0);
         let f1 = stack.pop_frame(0);
+        let r = a.to_call.call(stack);
+        stack.push_frame(f1);
+        stack.push_frame(f);
+        r
+    }
+}
+
+pub fn exec3(stack: &mut Stack) -> OError {
+    let Value::Func(a) = stack.pop().lock_ro().native.clone() else {
+        return stack.err(ErrorKind::InvalidCall("exec3".to_owned()))
+    };
+    unsafe {
+        let f = stack.pop_frame(0);
+        let f1 = stack.pop_frame(0);
         let f2 = stack.pop_frame(0);
-        a.to_call.call(stack)?;
+        let r = a.to_call.call(stack);
         stack.push_frame(f2);
         stack.push_frame(f1);
         stack.push_frame(f);
+        r
     }
-    Ok(())
 }
 
 pub fn stop(stack: &mut Stack) -> OError {
@@ -768,13 +785,23 @@ pub fn acopy(stack: &mut Stack) -> OError {
 }
 
 pub fn throw(stack: &mut Stack) -> OError {
-    let kind = ErrorKind::CustomObject(stack.pop());
-    stack.err(kind)
+    let obj = stack.pop();
+    if let Value::Str(ref s) = obj.lock_ro().native {
+        if obj.lock_ro().kind.lock_ro().get_id()
+            == get_type("str")
+                .expect("str type must exist")
+                .lock_ro()
+                .get_id()
+        {
+            stack.err(ErrorKind::Custom(s.to_owned()))?;
+        }
+    }
+    stack.err(ErrorKind::CustomObject(obj))
 }
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 50] = [
+    let fns: [(&str, Fn, u32); 51] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -812,6 +839,7 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("exit", exit, 0),
         ("exec", exec, 0),
         ("exec2", exec2, 0),
+        ("exec3", exec3, 0),
         ("stop", stop, 0),
         ("argv", argv, 1),
         ("get-env", get_env, 1),

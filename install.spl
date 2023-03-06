@@ -4,6 +4,7 @@ func main { mega |
     [ "sudo" "mkdir" "/usr/lib/spl" ] command-wait;
     [ "sh" "-c" "sudo cp *.spl /usr/lib/spl" ] command-wait;
     [ "cargo" "build" "--release" ] command-wait;
+    [ "sudo" "rm" "/bin/spl" ] command-wait;
     [ "sudo" "cp" "target/release/spl" "/bin" ] command-wait;
 
     "make sure its executable";

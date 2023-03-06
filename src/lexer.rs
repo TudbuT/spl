@@ -21,6 +21,9 @@ pub fn lex(input: String) -> Result<Words, LexerError> {
 }
 
 fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, usize), LexerError> {
+    if str_words.len() == 0 {
+        return Ok((None, Words::new(Vec::new()), 0));
+    }
     let mut rem = None;
     let mut words = Vec::new();
     let mut i = 0;

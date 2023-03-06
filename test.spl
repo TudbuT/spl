@@ -115,7 +115,7 @@ func main { int | with args ;
     catch {
         use net:http:Request
         "testing http" println
-        def req "tudbut.de" 81 "GET" "/" Request:new =req
+        def req "tudbut.de" 81 "GET" "/spltest" Request:new =req
         req:send:body _str println
     } 
     with { with e ;

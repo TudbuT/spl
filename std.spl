@@ -310,15 +310,13 @@ func concat { str | with a b ;
     a _array b _array aadd _str
 }
 
-func panic { | with msg ;
+func handle-panic { | with msg trace ;
     program-name dup if {
         program-name print " panicked at:" println
     } not if {
         "Program panicked at:" println
     }
-    { | with it ; 
-        it println 
-    } trace:foreach 
+    &println trace:foreach 
     "\nPanic message:" println
     "    " print msg println
     def map env =map
@@ -341,6 +339,8 @@ func panic { | with msg ;
     "Exiting." println
     1 exit
 }
+
+func panic { | trace handle-panic }
 
 { | with msg this ;
     this not if {
@@ -384,9 +384,17 @@ func -- { mega |
 func _ { | }
 
 func call-main-on-file { | with file ;
-    "@" file concat import 
-    update-types
-    argv main exit
+    catch {
+        "@" file concat import 
+        update-types
+        argv main exit
+    }
+    with { with err ;
+        err:message dup null eq if {
+            pop
+            "Uncaught error."
+        } err:trace handle-panic
+    }
 }
 
 func update-types { | 

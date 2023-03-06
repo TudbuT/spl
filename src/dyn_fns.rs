@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::{lexer, runtime::*};
 use crate::*;
+use crate::{lexer, runtime::*};
 
 pub fn dyn_dump(stack: &mut Stack) -> OError {
     Words {
