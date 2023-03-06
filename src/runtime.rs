@@ -1060,7 +1060,9 @@ pub fn find_in_splpath(path: &str) -> Result<String, String> {
     } else {
         match path {
             "std.spl" => Err(stdlib::STD.to_owned()),
+            "net.spl" => Err(stdlib::NET.to_owned()),
             "iter.spl" => Err(stdlib::ITER.to_owned()),
+            "http.spl" => Err(stdlib::HTTP.to_owned()),
             "stream.spl" => Err(stdlib::STREAM.to_owned()),
             _ => Ok(path.to_owned()),
         }

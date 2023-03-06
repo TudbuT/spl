@@ -592,7 +592,9 @@ pub fn import(stack: &mut Stack) -> OError {
         .unwrap_or(s.as_str())
     {
         "std.spl" => Some(stdlib::STD),
+        "net.spl" => Some(stdlib::NET),
         "iter.spl" => Some(stdlib::ITER),
+        "http.spl" => Some(stdlib::HTTP),
         "stream.spl" => Some(stdlib::STREAM),
         _ => None,
     };
