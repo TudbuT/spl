@@ -112,11 +112,23 @@ func main { int | with args ;
     { | println } (" " "hello how  are you" _:split):foreach
     "" println
 
-    use net:http:Request
-    "testing http" println
-    def req "tudbut.de" 81 "GET" "/" Request:new =req
-    req:send:body _str println
+    catch {
+        use net:http:Request
+        "testing http" println
+        def req "tudbut.de" 81 "GET" "/" Request:new =req
+        req:send:body _str println
+    } 
+    with { with e ;
+        e:message println
+        "it seems the internet is not available" println
+    }
     "" println
+
+    catch {
+        "heya" throw
+    } with { with e ;
+        e:object println
+    }
 
     100
 }

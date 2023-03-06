@@ -18,6 +18,12 @@ macro_rules! type_err {
     };
 }
 
+macro_rules! array {
+    ($stack:expr, $i:expr) => {
+        || $stack.error(ErrorKind::PropertyNotFound("array".to_owned(), $i.to_string()))
+    };
+}
+
 pub fn print(stack: &mut Stack) -> OError {
     let Value::Str(s) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("print".to_owned()))
@@ -113,7 +119,7 @@ pub fn array_get(stack: &mut Stack) -> OError {
     let Value::Mega(i) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("array-get".to_owned()))
     };
-    stack.push(a[i as usize].clone());
+    stack.push(a.get(i as usize).ok_or_else(array!(stack, i))?.clone());
     Ok(())
 }
 
@@ -126,8 +132,8 @@ pub fn array_set(stack: &mut Stack) -> OError {
         return stack.err(ErrorKind::InvalidCall("array-set".to_owned()))
     };
     let o = stack.pop();
-    stack.push(a[i as usize].clone());
-    a[i as usize] = o;
+    stack.push(a.get(i as usize).ok_or_else(array!(stack, i))?.clone());
+    *a.get_mut(i as usize).ok_or_else(array!(stack, i))? = o;
     Ok(())
 }
 

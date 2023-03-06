@@ -145,9 +145,10 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                     types.push(str_words[i].to_owned());
                     i += 1;
                 }
-                let blk = read_block(&str_words[i..], false)?;
-                i += 2 + blk.2;
-                let ctch = read_block(&str_words[i..], false)?;
+                let blk = read_block(&str_words[i + 1..], false)?;
+                i += 1 + blk.2;
+                let ctch = read_block(&str_words[i + 1..], false)?;
+                i += 1 + ctch.2;
                 words.push(Word::Key(Keyword::Catch(types, blk.1, ctch.1)))
             }
             "with" => {
