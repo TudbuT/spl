@@ -1,5 +1,8 @@
 
 func main { mega | with args ;
+    "Welcome to the SPL REPL!" println
+    "Enter any code after the cursor to execute it.\n" println
+
     "REPL" =program-name
     while { 1 } {
         catch {
