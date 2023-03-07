@@ -633,7 +633,7 @@ pub fn import(stack: &mut Stack) -> OError {
     }
     if stack.include_file(
         &(*fs::canonicalize(s.clone())
-            .map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?
+            .map_err(|x| stack.error(ErrorKind::IO(x.to_string() + " (opening " + &s + ")")))?
             .as_os_str()
             .to_string_lossy())
         .to_owned(),

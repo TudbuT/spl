@@ -111,7 +111,7 @@ construct _array-ext {
     }
 } include _array-ext in array
 
-"iter.spl" import
+"#iter.spl" import
 
 construct List {
     array

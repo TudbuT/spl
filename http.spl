@@ -1,5 +1,5 @@
-"stream.spl" import
-"net.spl" import
+"#stream.spl" import
+"#net.spl" import
 
 "http" net:register
 

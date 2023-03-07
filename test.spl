@@ -1,6 +1,6 @@
 
-"stream.spl" import
-"http.spl" import
+"#stream.spl" import
+"#http.spl" import
 
 func main { int | with args ;
     def thing
