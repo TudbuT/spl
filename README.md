@@ -4,9 +4,9 @@ SPL is a simple, concise, concatenative scripting language.
 
 Example:
 ```js
-func main { mega | 
+func main { mega | with args ;
     "Running with args: " print
-    argv:iter
+    args:iter
         { str | " " concat } swap:map
         &print swap:foreach
     "" println
