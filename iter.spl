@@ -38,9 +38,10 @@ construct _Iter {
         filter this FilterIter:new
     }
     skip { this | with amount this ;
-        { | 
+        { | pop
             this:next;
         } amount:foreach
+        this
     }
     count { mega | with this ;
         def n 0 =n
