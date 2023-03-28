@@ -193,16 +193,18 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                 let mut word = x
                     .split(':')
                     .next()
-                    .expect("unreachable (empty words are filtered by the parser)");
-                let mut ra = 0;
-                while word.starts_with('&') {
-                    ra += 1;
-                    word = &word[1..];
-                }
-                if let Some(word) = word.strip_suffix(';') {
-                    words.push(Word::Call(word.to_owned(), true, ra));
-                } else {
-                    words.push(Word::Call(word.to_owned(), false, ra));
+                    .unwrap(); // SAFETY: One item always exists after a split.
+                if !word.is_empty() {
+                    let mut ra = 0;
+                    while word.starts_with('&') {
+                        ra += 1;
+                        word = &word[1..];
+                    }
+                    if let Some(word) = word.strip_suffix(';') {
+                        words.push(Word::Call(word.to_owned(), true, ra));
+                    } else {
+                        words.push(Word::Call(word.to_owned(), false, ra));
+                    }
                 }
                 for mut word in x.split(':').skip(1) {
                     let mut ra = 0;
