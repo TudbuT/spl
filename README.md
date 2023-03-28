@@ -57,6 +57,10 @@ func main { mega | with args ;
   ```js
   func main { mega |
   ```
+- The `with` declaration will be explained below. It defines the `args` argument.
+  ```js
+  with args ;
+  ```
 - Now, we can write code like before:
   ```js
   def list
