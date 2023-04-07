@@ -358,6 +358,7 @@ impl Frame {
 pub struct Stack {
     frames: Vec<Arc<Frame>>,
     object_stack: Vec<AMObject>,
+    objcall_stack: Vec<AMObject>,
     files: Vec<String>,
     pub return_accumultor: u32,
 }
@@ -393,6 +394,7 @@ impl Stack {
         let mut r = Stack {
             frames: vec![o.clone()],
             object_stack: Vec::new(),
+            objcall_stack: Vec::new(),
             files: Vec::new(),
             return_accumultor: 0,
         };
@@ -409,6 +411,7 @@ impl Stack {
         let mut r = Stack {
             frames: vec![o.clone()],
             object_stack: Vec::new(),
+            objcall_stack: Vec::new(),
             files: Vec::new(),
             return_accumultor: 0,
         };
@@ -663,6 +666,20 @@ pub enum Keyword {
     /// encountered and the error is of <type> (or, if no type is specified, any error).
     /// equivalent to \[ ["<type>" <...>] \] { | <code> } { | <wordsOnCatch> } dyn-catch
     Catch(Vec<String>, Words, Words),
+    /// <none>
+    ///
+    /// Used by `object:method <{ arg1 arg2 }` syntax. Generates as:
+    /// - CALL object
+    /// - OBJPUSH
+    /// - CALL arg1
+    /// - CALL arg2
+    /// - OBJPOP
+    /// - OBJCALL method
+    ObjPush,
+    /// <none>
+    ///
+    /// see [Keyword::ObjPush]
+    ObjPop,
 }
 
 /// Any SPL value that is not a construct.
@@ -840,7 +857,10 @@ impl Type {
             q.append(&mut VecDeque::from(t.lock_ro().parents.clone()));
         }
         for property in to_apply.into_iter().rev() {
-            object.property_map.entry(property).or_insert_with(|| Value::Null.spl());
+            object
+                .property_map
+                .entry(property)
+                .or_insert_with(|| Value::Null.spl());
         }
     }
 
@@ -1198,6 +1218,17 @@ impl Words {
                             let obj = stack.pop();
                             stack.set_var(var, obj)?;
                         }
+                    }
+                    Keyword::ObjPush => {
+                        let o = stack.pop();
+                        stack.objcall_stack.push(o);
+                    }
+                    Keyword::ObjPop => {
+                        let o = stack
+                            .objcall_stack
+                            .pop()
+                            .expect("invalid word generation. objpop without objpush!");
+                        stack.push(o);
                     }
                 },
                 Word::Const(x) => {

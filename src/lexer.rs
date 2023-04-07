@@ -10,6 +10,7 @@ pub enum LexerError {
     InvalidInclude,
     InvalidConstructBlock,
     InvalidNumber(String),
+    ArgsWithoutCall,
 }
 
 pub fn lex(input: String) -> Result<Words, LexerError> {
@@ -64,6 +65,24 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                     fname: None,
                     name: "dyn".to_owned(),
                 }))))
+            }
+            "<{" => {
+                let block = read_block(&str_words[i + 1..], false)?;
+                i += block.2 + 1;
+                let mut block = block.1.words;
+                match words.remove(words.len() - 1) {
+                    Word::Call(a, b, c) => {
+                        words.append(&mut block);
+                        words.push(Word::Call(a, b, c));
+                    }
+                    Word::ObjCall(a, b, c) => {
+                        words.push(Word::Key(Keyword::ObjPush));
+                        words.append(&mut block);
+                        words.push(Word::Key(Keyword::ObjPop));
+                        words.push(Word::ObjCall(a, b, c));
+                    }
+                    _ => return Err(LexerError::ArgsWithoutCall),
+                }
             }
             "construct" => {
                 let name = str_words[i + 1].to_owned();
@@ -190,10 +209,7 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                 )));
             }
             x => {
-                let mut word = x
-                    .split(':')
-                    .next()
-                    .unwrap(); // SAFETY: One item always exists after a split.
+                let mut word = x.split(':').next().unwrap(); // SAFETY: One item always exists after a split.
                 if !word.is_empty() {
                     let mut ra = 0;
                     while word.starts_with('&') {
