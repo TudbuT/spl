@@ -669,12 +669,12 @@ pub enum Keyword {
     /// <none>
     ///
     /// Used by `object:method <{ arg1 arg2 }` syntax. Generates as:
-    /// - CALL object
-    /// - OBJPUSH
-    /// - CALL arg1
-    /// - CALL arg2
-    /// - OBJPOP
-    /// - OBJCALL method
+    /// - call object
+    /// - objpush
+    /// - call arg1
+    /// - call arg2
+    /// - objpop
+    /// - objcall method
     ObjPush,
     /// <none>
     ///

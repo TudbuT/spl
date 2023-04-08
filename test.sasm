@@ -1,0 +1,8 @@
+func main 1
+	with args
+	const str HW
+Hello, world!
+end HW
+	call println
+	const mega 3
+end

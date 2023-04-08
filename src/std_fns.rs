@@ -638,7 +638,7 @@ pub fn import(stack: &mut Stack) -> OError {
             .to_string_lossy())
         .to_owned(),
     ) {
-        stack.push(Value::Str(s).spl());
+        stack.push(Value::Str(s.clone()).spl());
         dup(stack)?;
         read_file(stack).or_else(|x| {
             if let Some(fallback) = fallback {
@@ -648,7 +648,11 @@ pub fn import(stack: &mut Stack) -> OError {
                 Err(x)
             }
         })?;
-        dyn_fns::wrap(dyn_fns::dyn_readf)(stack)?;
+        dyn_fns::wrap(if s.ends_with(".sasm") {
+            dyn_fns::dyn_sasmf
+        } else {
+            dyn_fns::dyn_readf
+        })(stack)?;
         call(stack)?;
     }
     Ok(())

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::sasm::sasm_read;
 use crate::*;
 use crate::{lexer, runtime::*};
 
@@ -248,6 +249,39 @@ pub fn dyn_readf(stack: &mut Stack) -> OError {
     Ok(())
 }
 
+pub fn dyn_sasm(stack: &mut Stack) -> OError {
+    require_on_stack!(sasm, Str, stack, "dyn-sasm");
+    stack.push(
+        Value::Func(AFunc::new(Func {
+            ret_count: 0,
+            to_call: FuncImpl::SPL(sasm_read(sasm)),
+            origin: stack.get_frame(),
+            fname: None,
+            name: "(dyn-read)".to_owned(),
+            run_as_base: false,
+        }))
+        .spl(),
+    );
+    Ok(())
+}
+
+pub fn dyn_sasmf(stack: &mut Stack) -> OError {
+    require_on_stack!(sasm, Str, stack, "dyn-sasmf");
+    require_on_stack!(n, Str, stack, "dyn-sasmf");
+    stack.push(
+        Value::Func(AFunc::new(Func {
+            ret_count: 0,
+            to_call: FuncImpl::SPL(sasm_read(sasm)),
+            origin: stack.get_frame(),
+            fname: Some(n),
+            name: "root".to_owned(),
+            run_as_base: true,
+        }))
+        .spl(),
+    );
+    Ok(())
+}
+
 pub fn dyn_catch(stack: &mut Stack) -> OError {
     require_on_stack!(ctch, Func, stack, "dyn-catch");
     require_on_stack!(blk, Func, stack, "dyn-catch");
@@ -280,7 +314,7 @@ pub(crate) fn wrap(f: fn(&mut Stack) -> OError) -> impl Fn(&mut Stack) -> OError
 
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 17] = [
+    let fns: [(&str, Fn, u32); 19] = [
         ("dyn-__dump", dyn_dump, 0),
         ("dyn-def", dyn_def, 0),
         ("dyn-func", dyn_func, 0),
@@ -296,6 +330,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("dyn-all-types", dyn_all_types, 1),
         ("dyn-read", dyn_read, 1),
         ("dyn-readf", dyn_readf, 1),
+        ("dyn-sasm", dyn_sasm, 1),
+        ("dyn-sasmf", dyn_sasmf, 1),
         ("dyn-catch", dyn_catch, 0),
         ("dyn-use", dyn_use, 0),
     ];

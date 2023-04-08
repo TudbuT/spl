@@ -30,6 +30,7 @@ pub mod dyn_fns;
 pub mod lexer;
 pub mod mutex;
 pub mod runtime;
+pub mod sasm;
 pub mod std_fns;
 pub mod stdlib;
 pub mod stream;
