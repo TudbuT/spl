@@ -1,6 +1,15 @@
 
 construct _Iter {
     ;
+    next-chunk { [item] | with amount this ;
+        def i 0 =i
+        def arr amount anew =arr
+        while { i amount lt } {
+            (this:next i arr:set;)
+            i ++ =i
+        }
+        arr
+    }
     foreach { | with callable this ;
         def itm
         while { this:next dup =itm null eq not } {
@@ -63,6 +72,14 @@ construct _Iter {
     }
     enumerate { EnumerationIter | with this ;
         this EnumerationIter:new
+    }
+    nth { item | with idx this ;
+        idx -- =idx
+        while { idx 0 gt } {
+            this:next;
+            idx -- =idx
+        }
+        this:next
     }
 }
 
