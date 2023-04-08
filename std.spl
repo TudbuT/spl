@@ -1,6 +1,8 @@
 
 def null
-
+func =null { | pop
+    "`null` must not be assigned a value!" panic
+}
 
 def program-name
 
