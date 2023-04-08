@@ -318,6 +318,21 @@ func nconcat { str | with amt ;
     _str
 }
 
+def cached-results MicroMap:new =cached-results
+func cache { ... | with arg-amt id body ;
+    def args arg-amt anew =args
+    def i arg-amt -- =i
+    while { i 0 lt not } {
+        "from stack"; i args:set;
+        i -- =i
+    }
+    def result [ args id ] cached-results:get =result
+    result null eq if {
+        args:to-stack body call dup =result [ args id ] swap cached-results:set;
+    }
+    result
+}
+
 func handle-panic { | with msg trace ;
     program-name dup if {
         program-name print " panicked at:" println

@@ -2,6 +2,8 @@
 "#stream.spl" import
 "#http.spl" import
 
+"SPL tester" =program-name
+
 func main { int | with args ;
     def thing
 
@@ -124,11 +126,23 @@ func main { int | with args ;
     }
     "" println
 
+    "testing cache" println
+    2 cached-test _str println
+    3 cached-test _str println
+    2 cached-test _str println
+    3 cached-test _str println
+    "" println
+
     catch {
         "heya" throw
     } with { with e ;
-        e:object println
+        e:message println
     }
 
     100
 }
+
+func cached-test { mega | 1 "cached-test" cache <{ { mega | with i ;
+    i 2 *
+    "calculated " i _str concat println
+} } }
