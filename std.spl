@@ -124,14 +124,14 @@ construct List {
         array this:=array
         this
     }
-    foreach { | _:array:foreach }
-    get { any | _:array:get }
-    sget { any|null | _:array:sget }
-    len { mega | _:array:len }
-    set { any | _:array:set }
-    to-stack { .. | _:array:to-stack }
-    to-str { str | _:array:to-str }
-    sub { [any] | _:array:sub }
+    foreach { | :array:foreach }
+    get { any | :array:get }
+    sget { any|null | :array:sget }
+    len { mega | :array:len }
+    set { any | :array:set }
+    to-stack { .. | :array:to-stack }
+    to-str { str | :array:to-str }
+    sub { [any] | :array:sub }
 }
 construct _GrowingArray {
     ;
@@ -216,7 +216,7 @@ construct MicroMap {
     get-entry { [any,any]|null | with key this ;
         this:pairs:iter
             { mega | 0 swap:get key eq } swap:filter
-            _:next
+            :next
     }
     get-or-create-entry { [any,any] | with key this ;
         { [any,any] | 
@@ -227,7 +227,7 @@ construct MicroMap {
         this:pairs:iter
             { mega | 0 swap:get key eq } swap:filter
             { any | 1 swap:get } swap:map
-            _:next
+            :next
     }
     set { any | with key val this ;
         val 1 (key this:get-or-create-entry):set
@@ -235,7 +235,7 @@ construct MicroMap {
     remove { any | with key this ;
         this:pairs:iter
             { mega | 0 swap:get key eq not } swap:filter
-            _:collect
+            :collect
             List:new:from
             =pairs
     }
@@ -310,6 +310,14 @@ func concat { str | with a b ;
     a _array b _array aadd _str
 }
 
+func nconcat { str | with amt ;
+    _array
+    (amt 1 -):foreach <{ { | pop
+        swap _array swap aadd
+    } }
+    _str
+}
+
 func handle-panic { | with msg trace ;
     program-name dup if {
         program-name print " panicked at:" println
@@ -381,7 +389,13 @@ func -- { mega |
     1 -
 }
 
-func _ { | }
+def _'has-been-called 0 =_'has-been-called
+func _ { | 
+    _'has-been-called not if {
+        "WARN: The _ function is deprecated!" println
+        1 =_'has-been-called
+    }
+}
 
 func call-main-on-file { | with file ;
     catch {

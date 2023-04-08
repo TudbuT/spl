@@ -37,24 +37,24 @@ construct net:http:Request {
         def response net:http:Response:new =response
 
         this:method:to-bytes stream:write-exact;
-        " " _:to-bytes stream:write-exact;
+        " " :to-bytes stream:write-exact;
         this:path:to-bytes stream:write-exact;
-        " HTTP/1.0\r\n" _:to-bytes stream:write-exact;
+        " HTTP/1.0\r\n" :to-bytes stream:write-exact;
 
-        "Host: " _:to-bytes stream:write-exact;
+        "Host: " :to-bytes stream:write-exact;
         this:host:to-bytes stream:write-exact;
         "\r\nConnection: Close\r\nUser-Agent: http.spl v0.1 2023-03 (spl@mail.tudbut.de)\r\n"
-            _:to-bytes stream:write-exact;
+            :to-bytes stream:write-exact;
 
         { | with header ;
             header:to-bytes stream:write-exact;
             "\r\n" stream:write-exact;
         } this:headers:foreach
 
-        "Content-Length: " _:to-bytes stream:write-exact;
+        "Content-Length: " :to-bytes stream:write-exact;
         def body this:body:to-bytes =body
         body:len _str:to-bytes stream:write-exact;
-        "\r\n\r\n" _:to-bytes stream:write-exact;
+        "\r\n\r\n" :to-bytes stream:write-exact;
         
         body stream:write-exact;
         stream:flush;

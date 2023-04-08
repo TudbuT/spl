@@ -75,7 +75,7 @@ func main { int | with args ;
 
     0 5 Range:new:iter
         { | pop 10 } swap:map
-        _:sum 
+        :sum 
         _str println
 
     "" println
@@ -104,12 +104,12 @@ func main { int | with args ;
     "testing stream" println
 
     def file "test.txt" 1 StreamTypes:file:create =file 
-    "hi\n" _:to-bytes file:write-exact; 
+    "hi\n" :to-bytes file:write-exact; 
     file:close null =file
     
     "" println
     "testing split" println
-    { | println } (" " "hello how  are you" _:split):foreach
+    { | println } (" " "hello how  are you" :split):foreach
     "" println
 
     catch {

@@ -10,6 +10,7 @@ func main { mega | with args ;
         { str | " " concat } swap:map
         &print swap:foreach
     "" println
+    println <{ "and with that, we're done" }
     0
 }
 ```
@@ -130,9 +131,7 @@ func main { mega | with args ;
   It sure does look like it, doesn't it? `swap` swaps the topmost two values on
   the stack. `a b -> b a`. That means we are actually calling to our iterator.
   The closure and the iterator are swapped before the call is made. `swap:map`
-  is a more concise way of writing `swap _:map`. The underscore is used as a
-  placeholder for the topmost value of the stack when making method calls,
-  because `swap :map` would try to call map on an empty expression.
+  is a more concise way of writing `swap :map`.
 
   The map function on the iterator (which is available through `:iter` on most
   collection constructs) is used to apply a function to all items in the
@@ -176,5 +175,58 @@ func main { mega | with args ;
   ```java
   for(int i = 0; i < 5; i++) { println((String) i * 5); }
   ```
+- SPL actually isn't fully concatenative. It supports postfix arguments as well:
+  ```js
+      println <{ "and with that, we're done" }
+  ```
+  This is actually not a special interpreter feature, more so is it a special
+  lexer feature. This is 100% equivalent with the non-postfix version, where the
+  string is right before the `println`.
+
+  The same can be done for object calls. Let's rewrite the previous code with
+  postfix:
+  ```js
+  Range:new <{ 0 5 }
+      :iter
+      :map <{ { | 5 * } }
+      :foreach <{ { | _str println } }
+  ```
+
+  I lied. This is now no longer 100% equivalent. Let's look at what happens
+  under the hood.
+
+  ```asm
+  call Range
+  objpush
+  const mega 0
+  const mega 5
+  objpop
+  objcall new
+  objcall iter
+  objpush
+  const func 0
+    const mega 5
+    call *
+    end
+  objpop
+  objcall map
+  objpush
+  const func 0
+    call _str
+    call println
+    end
+  objpop
+  call foreach
+  ```
+
+  You can see there are now `objpush` and `objpop` instructions. This is doing
+  the job that `swap` used to do in our previous example. However, swap can only
+  swap the topmost values, but postfix arguments allow any amount. That's why
+  there is a special instruction just for that. It can also be used through AST
+  modifications, but there is no way to get it in normal language use as it can
+  cause interpreter panics when they are used wrongly.
+
+  `objpush` and `objpop` operate on a separate stack, called the objcall stack,
+  as opposed to the main object stack.
 
 More of this tutorial to follow.
