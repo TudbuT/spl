@@ -11,6 +11,7 @@ pub fn sasm_read(s: String) -> Words {
 pub fn sasm_read_func<'a>(lines: &mut impl Iterator<Item = &'a str>) -> Words {
     let mut words = Vec::new();
     while let Some(line) = lines.next() {
+        let line = line.trim_start();
         if line == "end" {
             break;
         }
@@ -20,7 +21,7 @@ pub fn sasm_read_func<'a>(lines: &mut impl Iterator<Item = &'a str>) -> Words {
 }
 
 fn sasm_parse<'a>(line: &str, words: &mut Vec<Word>, lines: &mut impl Iterator<Item = &'a str>) {
-    let line: Vec<_> = line.trim_start().split(" ").collect();
+    let line: Vec<_> = line.split(" ").collect();
     match line[0] {
         "dump" => words.push(Word::Key(Keyword::Dump)),
         "def" => words.push(Word::Key(Keyword::Def(line[1].to_owned()))),

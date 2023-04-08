@@ -4,5 +4,34 @@ func main 1
 Hello, world!
 end HW
 	call println
+	call test
 	const mega 3
+end
+
+func test 0
+	call [
+	const func 5
+		const mega 0
+		const mega 1
+		const mega 2
+		const mega 3
+		const mega 4
+	end
+	call call
+	call ]
+	objcall iter
+	objpush
+	const func 1
+		const mega 5
+		call *
+	end
+	objpop
+	objcall map
+	objpush
+	const func 0
+		call _str
+		call println
+	end
+	objpop
+	objcall foreach
 end
