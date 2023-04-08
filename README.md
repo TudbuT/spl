@@ -216,7 +216,7 @@ func main { mega | with args ;
     call println
     end
   objpop
-  call foreach
+  objcall foreach
   ```
 
   You can see there are now `objpush` and `objpop` instructions. This is doing
