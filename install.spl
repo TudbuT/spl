@@ -1,6 +1,6 @@
 "to be run with `cargo run install.spl`.";
 
-func main { mega |
+func main { mega | with args ;
     [ "sudo" "mkdir" "/usr/lib/spl" ] command-wait;
     [ "sh" "-c" "sudo cp *.spl /usr/lib/spl" ] command-wait;
     [ "cargo" "build" "--release" ] command-wait;

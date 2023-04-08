@@ -195,7 +195,7 @@ func main { mega | with args ;
   I lied. This is now no longer 100% equivalent. Let's look at what happens
   under the hood.
 
-  ```asm
+  ```js
   call Range
   objpush
   const mega 0
