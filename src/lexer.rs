@@ -287,7 +287,7 @@ fn parse_line(line: &str) -> Vec<String> {
             if c == '(' || c == ')' {
                 continue;
             }
-            if c == ' ' {
+            if c == ' ' || c == '\t' {
                 if s.is_empty() {
                     continue;
                 }
