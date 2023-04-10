@@ -613,6 +613,7 @@ pub fn import(stack: &mut Stack) -> OError {
         "iter.spl" => Some(stdlib::ITER),
         "http.spl" => Some(stdlib::HTTP),
         "stream.spl" => Some(stdlib::STREAM),
+        "messaging.spl" => Some(stdlib::MESSAGING),
         _ => None,
     };
     if let Some(x) = s.strip_prefix('#') {

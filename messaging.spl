@@ -1,0 +1,44 @@
+"messaging bus, aka event bus"
+
+construct messaging namespace {
+	Message
+	Bus
+}
+
+construct messaging:Message {
+	name
+	content
+	;
+	construct { this | with name content this ;
+		name this:=name
+		content this:=content
+		this
+	}
+}
+
+construct messaging:Bus {
+	subscribers
+	;
+	construct { this | with this ;
+		MicroMap:new this:=subscribers
+		this
+	}
+	subscribe { | with message callable this ;
+		def entry message this:subscribers:get-or-create-entry =entry
+		entry:1 null eq if {
+			List:new entry:=1
+		}
+		callable entry:1:push
+	}
+	publish { | with message this ;
+		message gettype messaging:Message eq not if {
+			message null messaging:Message:new =message
+		}
+		def entry message:name this:subscribers:get =entry
+		entry null eq not if {
+			{ | with it ;
+				message it call
+			} entry:foreach
+		}
+	}
+}

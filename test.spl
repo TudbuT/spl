@@ -1,6 +1,7 @@
 
 "#stream.spl" import
 "#http.spl" import
+"#messaging.spl" import
 
 "SPL tester" =program-name
 
@@ -138,7 +139,19 @@ func main { int | with args ;
     } with { with e ;
         e:message println
     }
+    "" println
 
+    "testing messages" println
+    def bus messaging:Bus:new =bus
+    bus:subscribe <{ "testmsg1" { | with message ; message:name print " called1 1" println } }
+    bus:subscribe <{ "testmsg1" { | with message ; message:name print " called1 2" println } }
+    bus:subscribe <{ "testmsg2" { | with message ; message:name print " called2 1" println } }
+    bus:subscribe <{ "testmsg2" { | with message ; message:name print " called2 2" println } }
+    "testmsg1" bus:publish
+    "testmsg2" bus:publish
+    "testmsg1" bus:publish
+    "testmsg3" bus:publish
+    
     100
 }
 

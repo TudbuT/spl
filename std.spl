@@ -111,6 +111,21 @@ construct _array-ext {
     4 { any | with this ;
         4 this:get
     }
+    =0 { | with this ;
+        0 this:set;
+    }
+    =1 { | with this ;
+        1 this:set;
+    }
+    =2 { | with this ;
+        2 this:set;
+    }
+    =3 { | with this ;
+        3 this:set;
+    }
+    =4 { | with this ;
+        4 this:set;
+    }
 } include _array-ext in array
 
 "#iter.spl" import
