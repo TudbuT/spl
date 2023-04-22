@@ -6,6 +6,11 @@ func =null { | pop
 
 def program-name
 
+def std.alias.print &print =std.alias.print
+func print { |
+    _str std.alias.print call
+}
+
 func println { |
     print "\n" print
 }
