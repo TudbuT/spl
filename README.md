@@ -230,3 +230,35 @@ func main { mega | with args ;
   as opposed to the main object stack.
 
 More of this tutorial to follow.
+
+## Embedding rust into SPL
+
+Because SPL does not nearly have a complete standard library, embedding rust is required for many tasks.
+This can be done as follows
+
+```
+> cat rust-test.spl
+func main { |
+	1 rusty-test _str println
+	0
+}
+func rusty-test @rust !{
+	println!("hii");
+	let v = #pop:Mega#;
+	#push(v + 1)#;
+}
+> spl --build rust-test.spl demo
+---snip---
+> ./spl-demo/target/release/spl-demo rust-test.spl
+hii
+2
+```
+
+As you can see, it's relatively straight-forward to do; but there are some major limitations right now:
+
+- It's a new binary, and can't be linked into the currently running program
+- No crates can be added automatically at the moment
+
+The second one is easy to fix, but I intend to fix the first one first. Sadly, fixing it requires
+compiling the code as a dynamic library and also getting it to work with the program its running in. 
+If anyone knows how to do this properly, I'd REALLY appreciate a PR or issue explaining it.

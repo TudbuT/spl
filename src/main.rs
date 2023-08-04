@@ -12,6 +12,9 @@ fn main() {
         let data = fs::read_to_string(file.clone()).expect("unable to read specified file");
         println!("Building SPL with specified natives file...");
         let mut builder = RustAppBuilder::new();
+        if let Some(name) = args.next() {
+            builder.set_name(name);
+        }
         println!("Embedding source...");
         builder.add_source(file, data.to_owned());
         println!("Preparing rust code...");

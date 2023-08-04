@@ -20,7 +20,7 @@ fn parse_hash_expr(s: String, name: &str) -> String {
         return format!("{{ require_on_stack!(tmp, {s}, stack, {name:?}); tmp }}");
     }
     if let Some(s) = readf1("push({})", &s) {
-        return format!("stack.push(({s}).spl())");
+        return format!("stack.push(({s}).spl());");
     }
     panic!("invalid #-expr - this error will be handled in the future")
 }
