@@ -22,6 +22,9 @@ fn parse_hash_expr(s: String, name: &str) -> String {
     if let Some(s) = readf1("push({})", &s) {
         return format!("stack.push(({s}).spl());");
     }
+    if let Some(s) = readf1("call({})", &s) {
+        return format!("stack.call(&stack.get_func({s:?}.to_owned())?)?;");
+    }
     panic!("invalid #-expr - this error will be handled in the future")
 }
 

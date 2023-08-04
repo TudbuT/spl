@@ -2,9 +2,14 @@ func main { |
 	1 rusty-test _str println
 	0
 }
+func sply-test { mega | 
+	1
+}
 func rusty-test @rust !{
 	println!("hii");
 	let v = #pop:Mega#;
-	#push(v + 1)#;
+	#call(sply-test)#
+	let v2 = #pop:Mega#;
+	#push(v + v2)#
 }
 
