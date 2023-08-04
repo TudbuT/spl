@@ -61,8 +61,10 @@ impl Hash for RustAppBuilder {
 impl RustAppBuilder {
     pub fn new() -> RustAppBuilder {
         Self {
+            rust_functions: Vec::new(),
+            to_embed: HashMap::new(),
             default_file: "repl.spl".to_owned(),
-            ..Default::default()
+            name: None,
         }
     }
 
