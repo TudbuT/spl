@@ -3,6 +3,12 @@
 version = 3
 
 [[package]]
+name = "multicall"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "428f6ba17d0c927e57c15a86cf5d7d07a2f35b3fbf15b1eb36b7075459e150a3"
+
+[[package]]
 name = "once_cell"
 version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16,8 +22,9 @@ checksum = "b03f7fbd470aa8b3ad163c85cce8bccfc11cc9c44ef12da0a4eddd98bd307352"
 
 [[package]]
 name = "spl"
-version = "0.0.4"
+version = "0.1.0"
 dependencies = [
+ "multicall",
  "once_cell",
  "readformat",
 ]

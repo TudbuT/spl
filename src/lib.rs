@@ -29,6 +29,7 @@
 pub mod dyn_fns;
 pub mod lexer;
 pub mod mutex;
+pub mod oxidizer;
 pub mod runtime;
 pub mod sasm;
 pub mod std_fns;

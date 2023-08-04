@@ -1,6 +1,6 @@
 [package]
 name = "spl"
-version = "0.0.4"
+version = "0.1.0"
 edition = "2021"
 description = "Stack Pogramming Language: A simple, concise scripting language."
 license = "MIT"
@@ -10,3 +10,4 @@ authors = ["TudbuT"]
 [dependencies]
 readformat = "0.1"
 once_cell = "1.17"
+multicall = "0.1.4"

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{mem, sync::Arc};
 
 use crate::runtime::*;
 use readformat::*;
@@ -14,10 +14,7 @@ pub enum LexerError {
 }
 
 pub fn lex(input: String) -> Result<Words, LexerError> {
-    let mut str_words = Vec::new();
-    for line in input.split('\n') {
-        str_words.append(&mut parse_line(line));
-    }
+    let str_words = parse(input);
     Ok(read_block(&str_words[..], false)?.1)
 }
 
@@ -52,6 +49,17 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                         block.0.ok_or(LexerError::FunctionBlockExpected)?,
                         block.1,
                     )));
+                } else if let Some(dat) =
+                    readf1("func\0{}\0@rust", str_words[i..=i + 2].join("\0").as_str())
+                {
+                    i += 3;
+                    words.push(Word::Key(Keyword::FuncOf(
+                        dat.to_owned(),
+                        str_words[i][2..].to_owned(),
+                        FuncImplType::Rust,
+                    )));
+                } else {
+                    return Err(LexerError::FunctionBlockExpected);
                 }
             }
             "{" => {
@@ -65,6 +73,9 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                     name: "dyn".to_owned(),
                     run_as_base: false,
                 }))))
+            }
+            x if x.len() >= 2 && &x[0..2] == "!{" => {
+                words.push(Word::Const(Value::Str(x[2..].to_owned())));
             }
             "<{" => {
                 let block = read_block(&str_words[i + 1..], false)?;
@@ -241,67 +252,104 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
     Ok((rem, Words { words }, i))
 }
 
-fn parse_line(line: &str) -> Vec<String> {
+fn parse(input: String) -> Vec<String> {
     let mut words = Vec::new();
-    let mut in_string = false;
-    let mut escaping = false;
-    let mut was_in_string = false;
     let mut s = String::new();
-    for c in line.chars() {
-        if in_string {
-            if escaping {
+
+    let mut exclam = false;
+    let mut raw = 0;
+
+    for line in input.split('\n') {
+        let mut in_string = false;
+        let mut escaping = false;
+        let mut was_in_string = false;
+        for c in line.chars() {
+            if in_string {
+                if escaping {
+                    if raw == 0 {
+                        if c == '\\' {
+                            s += "\\";
+                        }
+                        if c == 'n' {
+                            s += "\n";
+                        }
+                        if c == 'r' {
+                            s += "\r";
+                        }
+                        if c == '"' {
+                            s += "\"";
+                        }
+                        escaping = false;
+                        continue;
+                    } else {
+                        escaping = false;
+                    }
+                } else if c == '"' {
+                    in_string = false;
+                    escaping = false;
+                    was_in_string = true;
+                    if raw == 0 {
+                        continue;
+                    }
+                }
                 if c == '\\' {
-                    s += "\\";
+                    escaping = true;
+                    if raw == 0 {
+                        continue;
+                    }
                 }
-                if c == 'n' {
-                    s += "\n";
-                }
-                if c == 'r' {
-                    s += "\r";
-                }
+            } else {
                 if c == '"' {
                     s += "\"";
-                }
-                escaping = false;
-                continue;
-            } else if c == '"' {
-                in_string = false;
-                escaping = false;
-                was_in_string = true;
-                continue;
-            }
-            if c == '\\' {
-                escaping = true;
-                continue;
-            }
-        } else {
-            if c == '"' {
-                s += "\"";
-                in_string = true;
-                continue;
-            }
-            if c == ';' && was_in_string {
-                s = String::new();
-                continue;
-            }
-            if c == '(' || c == ')' {
-                continue;
-            }
-            if c == ' ' || c == '\t' {
-                if s.is_empty() {
+                    in_string = true;
                     continue;
                 }
-                words.push(s);
-                s = String::new();
-                was_in_string = false;
-                continue;
+                if raw == 0 {
+                    if c == ';' && was_in_string {
+                        s = String::new();
+                        continue;
+                    }
+                    if c == '(' || c == ')' {
+                        continue;
+                    }
+                    if c == ' ' || c == '\t' {
+                        if s.is_empty() {
+                            continue;
+                        }
+                        words.push(s);
+                        s = String::new();
+                        was_in_string = false;
+                        continue;
+                    }
+                    if c == '{' && exclam {
+                        raw = 1;
+                    }
+                    exclam = false;
+                    if c == '!' {
+                        exclam = true;
+                    }
+                } else {
+                    if c == '{' {
+                        raw += 1;
+                    }
+                    if c == '}' {
+                        raw -= 1;
+                    }
+                    if raw == 0 {
+                        words.push(mem::take(&mut s));
+                        continue;
+                    }
+                }
             }
+            was_in_string = false;
+            s += String::from(c).as_str();
         }
-        was_in_string = false;
-        s += String::from(c).as_str();
+        if !s.is_empty() && raw == 0 {
+            words.push(mem::take(&mut s));
+        }
     }
     if !s.is_empty() {
-        words.push(s);
+        words.push(mem::take(&mut s));
     }
     words
 }

@@ -1,8 +1,9 @@
 
+"the net namespace allows any other constructs and namespaces in it. They can be added";
+"using \"Name\" net:register after which net:Name is available to become a construct";
 construct net namespace {
     ;
     register { | with name this ;
-        name "net" dyn-def-field;
-        this "net" settype =net
+        name "net" this register-field
     }
 }

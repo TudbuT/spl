@@ -426,6 +426,14 @@ func -- { mega |
     1 -
 }
 
+func times { | with amount callable ;
+    def i 0 =i
+    while { i amount lt } {
+        i callable call
+        i ++ =i
+    }
+}
+
 def _'has-been-called 0 =_'has-been-called
 func _ { | 
     _'has-been-called not if {
@@ -461,4 +469,10 @@ func update-types { |
     } "unwrap-or" "null" dyn-def-method
 }
 update-types
+
+"Adds a field to a namespace and initially sets it to the field's name.";
+func register-field { | with field-name namespace-name namespace ;
+    field-name namespace-name dyn-def-field;
+    namespace namespace-name settype ("=" namespace-name concat) dyn-call
+}
 

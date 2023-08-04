@@ -1,0 +1,10 @@
+func main { |
+	1 rusty-test _str println
+	0
+}
+func rusty-test @rust !{
+	println!("hii");
+	let v = #pop:Mega#;
+	#push(v + 1)#;
+}
+

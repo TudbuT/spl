@@ -63,6 +63,8 @@ pub struct Runtime {
     types_by_id: HashMap<u32, AMType>,
     next_stream_id: u128,
     streams: HashMap<u128, Arc<Mut<Stream>>>,
+    pub embedded_files: HashMap<&'static str, &'static str>,
+    pub native_functions: HashMap<&'static str, (u32, FuncImpl)>,
 }
 
 impl Debug for Runtime {
@@ -90,6 +92,8 @@ impl Runtime {
             types_by_id: HashMap::new(),
             next_stream_id: 0,
             streams: HashMap::new(),
+            embedded_files: HashMap::new(),
+            native_functions: HashMap::new(),
         };
         let _ = rt.make_type("null".to_owned(), Ok); // infallible
         let _ = rt.make_type("int".to_owned(), Ok); // infallible
@@ -100,6 +104,7 @@ impl Runtime {
         let _ = rt.make_type("func".to_owned(), Ok); // infallible
         let _ = rt.make_type("array".to_owned(), Ok); // infallible
         let _ = rt.make_type("str".to_owned(), Ok); // infallible
+        stdlib::register(&mut rt);
         rt
     }
 
@@ -144,6 +149,14 @@ impl Runtime {
 
     pub fn destroy_stream(&mut self, id: u128) {
         self.streams.remove(&id);
+    }
+
+    pub fn load_native_function(&self, name: &str) -> &(u32, FuncImpl) {
+        self.native_functions.get(name).unwrap_or_else(|| {
+            panic!(
+                "It seems the native function {name} was not compiled into this program. Stopping."
+            )
+        })
     }
 
     pub fn reset() {
@@ -605,6 +618,11 @@ impl Stack {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum FuncImplType {
+    Rust,
+}
+
 /// An SPL keyword. Used to deviate from normal linear code structure.
 ///
 /// This is different from a [Word], which are any SPL code.
@@ -680,6 +698,11 @@ pub enum Keyword {
     ///
     /// see [Keyword::ObjPush]
     ObjPop,
+    /// func <name> @<type> !{ <content> }
+    ///
+    /// Defines function <name> with <type> impl type
+    /// equivalent to "<content>" "<name>" "<type>" dyn-func-of
+    FuncOf(String, String, FuncImplType),
 }
 
 /// Any SPL value that is not a construct.
@@ -1067,6 +1090,22 @@ where
     }
 }
 
+macro_rules! impl_to_object {
+    ($kind:ident, $type:ty) => {
+        impl From<$type> for Object {
+            fn from(value: $type) -> Object {
+                Value::$kind(value).into()
+            }
+        }
+    };
+}
+
+impl_to_object!(Int, i32);
+impl_to_object!(Long, i64);
+impl_to_object!(Mega, i128);
+impl_to_object!(Float, f32);
+impl_to_object!(Double, f64);
+
 /// Finds a file in the SPL_PATH, or returns the internal [stdlib] version of it.
 pub fn find_in_splpath(path: &str) -> Result<String, String> {
     if Path::new(path).exists() {
@@ -1076,15 +1115,14 @@ pub fn find_in_splpath(path: &str) -> Result<String, String> {
     if Path::new(&s).exists() {
         Ok(s)
     } else {
-        match path {
-            "std.spl" => Err(stdlib::STD.to_owned()),
-            "net.spl" => Err(stdlib::NET.to_owned()),
-            "iter.spl" => Err(stdlib::ITER.to_owned()),
-            "http.spl" => Err(stdlib::HTTP.to_owned()),
-            "stream.spl" => Err(stdlib::STREAM.to_owned()),
-            "messaging.spl" => Err(stdlib::MESSAGING.to_owned()),
-            _ => Ok(path.to_owned()),
-        }
+        runtime(|x| {
+            for (&p, &data) in &x.embedded_files {
+                if path == p {
+                    return Err(data.to_owned());
+                }
+            }
+            Ok(path.to_owned()) // fails later
+        })
     }
 }
 
@@ -1231,6 +1269,20 @@ impl Words {
                             .expect("invalid word generation. objpop without objpush!");
                         stack.push(o);
                     }
+                    Keyword::FuncOf(name, _, _) => runtime(|x| {
+                        let f = x.load_native_function(&name);
+                        stack.define_func(
+                            name.to_owned(),
+                            Arc::new(Func {
+                                ret_count: f.0,
+                                to_call: f.1.clone(),
+                                origin: stack.get_frame(),
+                                run_as_base: false,
+                                fname: None,
+                                name,
+                            }),
+                        )
+                    }),
                 },
                 Word::Const(x) => {
                     if option_env!("SPLDEBUG").is_some() {

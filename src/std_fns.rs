@@ -602,20 +602,19 @@ pub fn import(stack: &mut Stack) -> OError {
     let Value::Str(mut s) = stack.pop().lock_ro().native.clone() else {
         return stack.err(ErrorKind::InvalidCall("import".to_owned()))
     };
-    let fallback = match s
+    let fallback = s
         .as_str()
         .rsplit_once(|x| x == '/' || x == '#')
         .map(|(.., x)| x)
-        .unwrap_or(s.as_str())
-    {
-        "std.spl" => Some(stdlib::STD),
-        "net.spl" => Some(stdlib::NET),
-        "iter.spl" => Some(stdlib::ITER),
-        "http.spl" => Some(stdlib::HTTP),
-        "stream.spl" => Some(stdlib::STREAM),
-        "messaging.spl" => Some(stdlib::MESSAGING),
-        _ => None,
-    };
+        .unwrap_or(s.as_str());
+    let fallback = runtime(|x| {
+        for (&p, &data) in &x.embedded_files {
+            if fallback == p {
+                return Some(data.to_owned());
+            }
+        }
+        None
+    });
     if let Some(x) = s.strip_prefix('#') {
         s = find_in_splpath(x).unwrap_or(x.to_owned());
     } else if let Some(x) = s.strip_prefix('@') {
