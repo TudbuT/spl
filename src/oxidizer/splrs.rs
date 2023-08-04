@@ -37,7 +37,6 @@ pub fn to_rust(name: String, mut splrs: String) -> RustFunction {
                 let mut hash_expr = None;
                 let mut brace = 0;
                 for c in splrs.chars() {
-                    dbg!(c, &rs, in_str, escaping, &hash_expr, brace);
                     if in_str {
                         if escaping {
                             escaping = false;
