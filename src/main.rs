@@ -35,8 +35,9 @@ fn main() {
         } else {
             let mut args: Vec<String> = args.collect();
             args.insert(0, file);
-            app.execute(args).unwrap();
+            let mut command = app.execute(args).unwrap();
             app.delete();
+            command.wait().unwrap();
         }
 
         return;
