@@ -1,0 +1,9 @@
+func main { mega | with args ;
+    2 args:iter:skip =args
+    { | with item ; 
+        item print 
+        " " print
+    } args:foreach
+    "\n" print
+    0 exit
+}

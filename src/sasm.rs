@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
-use crate::{Frame, Func, FuncImpl, Keyword, Value, Word, Words};
+use crate::{Frame, Func, FuncImpl, FuncImplType, Keyword, Value, Word, Words};
 
 /// Reads sasm, the text representation of an SPL AST.
 pub fn sasm_read(s: String) -> Words {
@@ -62,7 +62,7 @@ fn sasm_parse<'a>(line: &str, words: &mut Vec<Word>, lines: &mut impl Iterator<I
                 methods,
                 match iter.next() {
                     None => false,
-                    Some(x) => (|x| x == "namespace")(x),
+                    Some(x) => x == "namespace",
                 },
             )))
         }
@@ -86,6 +86,33 @@ fn sasm_parse<'a>(line: &str, words: &mut Vec<Word>, lines: &mut impl Iterator<I
         ))),
         "objpush" => words.push(Word::Key(Keyword::ObjPush)),
         "objpop" => words.push(Word::Key(Keyword::ObjPop)),
+        "func_of_Rust" => {
+            // output += &format!(
+            //     "func_of_{kind:?} {name} {t}\0\0{}\0\0end {t}\n",
+            //     content.replace("\0", "\0\x01").replace("\n", "\0\0")
+            // );
+            let name = line[1];
+            let marker = line[2];
+            let mut s = String::new();
+            let mut line;
+            while (
+                line = lines.next().expect("sasm string without end marker"),
+                line,
+            )
+                .1
+                != "end ".to_owned() + marker
+            {
+                s = s + line + "\n";
+            }
+            if let Some(l) = s.strip_suffix("\n") {
+                s = l.to_owned();
+            }
+            words.push(Word::Key(Keyword::FuncOf(
+                name.to_owned(),
+                s,
+                FuncImplType::Rust,
+            )));
+        }
         // main words
         "const" => match line[1] {
             "str" => {
@@ -180,4 +207,173 @@ fn sasm_parse<'a>(line: &str, words: &mut Vec<Word>, lines: &mut impl Iterator<I
         "" => {}
         _ => panic!("invalid sasm instruction: {}", line[0]),
     }
+}
+
+pub fn sasm_write(words: Words) -> String {
+    sasm_write_func(words)
+        .replace("\0\0", "\n")
+        .replace("\0\x01", "\0")
+}
+
+fn sasm_write_func(words: Words) -> String {
+    let mut output = String::new();
+    for word in words.words {
+        match word {
+            Word::Key(word) => match word {
+                Keyword::Dump => {
+                    output += "dump\n";
+                }
+                Keyword::Def(x) => {
+                    output += "def ";
+                    output += &x;
+                    output += "\n";
+                }
+                Keyword::Func(name, returns, text) => {
+                    output += &format!("func {name} {returns}\n\t");
+                    let text = sasm_write_func(text).replace("\n", "\n\t");
+                    let text = text.trim_end();
+                    output += &text;
+                    output += "\nend\n";
+                }
+                Keyword::Construct(name, vars, methods, is_namespace) => {
+                    output += &format!("construct {name} ");
+                    for var in vars {
+                        output += &var;
+                        output += " ";
+                    }
+                    output += ";";
+                    for method in &methods {
+                        output += " ";
+                        output += &method.0;
+                        output += " ";
+                        output += &method.1 .0.to_string();
+                    }
+                    if is_namespace {
+                        output += " ; namespace";
+                    }
+                    output += "\n";
+                    for method in methods {
+                        output += "\t";
+                        output += &sasm_write_func(method.1 .1)
+                            .replace("\n", "\n\t")
+                            .trim_end();
+                        output += "\nend\n";
+                    }
+                }
+                Keyword::Include(type_to_include, t) => {
+                    output += &format!("include {type_to_include} {t}\n");
+                }
+                Keyword::Use(path) => output += &format!("use {path}\n"),
+                Keyword::While(cond, blk) => {
+                    output += "while\n\t";
+                    output += &sasm_write_func(cond).replace("\n", "\n\t").trim_end();
+                    output += "\nend\n\t";
+                    output += &sasm_write_func(blk).replace("\n", "\n\t").trim_end();
+                    output += "\nend\n";
+                }
+                Keyword::If(blk) => {
+                    output += "if\n\t";
+                    output += &sasm_write_func(blk).replace("\n", "\n\t").trim_end();
+                    output += "\nend\n";
+                }
+                Keyword::With(items) => {
+                    output += "with";
+                    for item in items {
+                        output += " ";
+                        output += &item;
+                    }
+                    output += "\n";
+                }
+                Keyword::Catch(kinds, blk, ctch) => {
+                    output += "catch";
+                    for kind in kinds {
+                        output += " ";
+                        output += &kind;
+                    }
+                    output += "\n\t";
+                    output += &sasm_write_func(blk).replace("\n", "\n\t").trim_end();
+                    output += "\nend\n\t";
+                    output += &sasm_write_func(ctch).replace("\n", "\n\t").trim_end();
+                    output += "\nend\n";
+                }
+                Keyword::ObjPush => output += "objpush\n",
+                Keyword::ObjPop => output += "objpop\n",
+                Keyword::FuncOf(name, content, kind) => {
+                    fn time() -> String {
+                        SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_micros()
+                            .to_string()
+                    }
+                    let mut t = time();
+                    while content.contains(&t) {
+                        t = time();
+                    }
+                    output += &format!(
+                        "func_of_{kind:?} {name} {t}\0\0{}\0\0end {t}\n",
+                        content.replace("\0", "\0\x01").replace("\n", "\0\0")
+                    );
+                }
+            },
+            Word::Const(item) => match item {
+                Value::Null => output += "const null\n",
+                Value::Int(x) => output += &format!("const int {x}\n"),
+                Value::Long(x) => output += &format!("const long {x}\n"),
+                Value::Mega(x) => output += &format!("const mega {x}\n"),
+                Value::Float(x) => output += &format!("const float {x}\n"),
+                Value::Double(x) => output += &format!("const double {x}\n"),
+                Value::Func(x) => {
+                    let text = match &x.to_call {
+                        FuncImpl::Native(_) => panic!("sasm can't write native function"),
+                        FuncImpl::NativeDyn(_) => panic!("sasm can't write native function"),
+                        FuncImpl::SPL(x) => sasm_write_func(x.clone()).replace("\n", "\n\t"),
+                    };
+                    let text = text.trim_end();
+                    output += &format!("const func {}\n\t{}\nend\n", x.ret_count, text);
+                }
+                Value::Array(_) => panic!("sasm can't write arrays"),
+                Value::Str(text) => {
+                    fn time() -> String {
+                        SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_micros()
+                            .to_string()
+                    }
+                    let mut t = time();
+                    while text.contains(&t) {
+                        t = time();
+                    }
+                    output += &format!(
+                        "const str {t}\0\0{}\0\0end {t}\n",
+                        text.replace("\0", "\0\x01").replace("\n", "\0\0")
+                    );
+                }
+            },
+            Word::Call(name, rem, ra) => {
+                output += "call ";
+                output += &name;
+                if rem {
+                    output += " pop";
+                }
+                for _ in 0..ra {
+                    output += " ref";
+                }
+                output += "\n";
+            }
+            Word::ObjCall(name, rem, ra) => {
+                output += "objcall ";
+                output += &name;
+                if rem {
+                    output += " pop";
+                }
+                for _ in 0..ra {
+                    output += " ref";
+                }
+                output += "\n";
+            }
+        }
+    }
+    output
 }

@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dyn_fns, mutex::Mut, runtime::*, *};
+use crate::{dyn_fns, mutex::Mut, runtime::*, sasm::sasm_write, *};
 
 #[macro_export]
 macro_rules! type_err {
@@ -803,9 +803,37 @@ pub fn throw(stack: &mut Stack) -> OError {
     stack.err(ErrorKind::CustomObject(obj))
 }
 
+pub fn write_sasm(stack: &mut Stack) -> OError {
+    require_on_stack!(code, Str, stack, "write-sasm");
+    stack.push(
+        Value::Str(
+            lexer::lex(code)
+                .map(|x| sasm_write(x))
+                .map_err(|x| stack.error(ErrorKind::LexError(format!("{x:?}"))))?,
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
+pub fn write_file_sasm(stack: &mut Stack) -> OError {
+    require_on_stack!(file, Str, stack, "write-file-sasm");
+    stack.push(
+        Value::Str(
+            lexer::lex(
+                fs::read_to_string(file).map_err(|x| stack.error(ErrorKind::IO(x.to_string())))?,
+            )
+            .map(|x| sasm_write(x))
+            .map_err(|x| stack.error(ErrorKind::LexError(format!("{x:?}"))))?,
+        )
+        .spl(),
+    );
+    Ok(())
+}
+
 pub fn register(r: &mut Stack, o: Arc<Frame>) {
     type Fn = fn(&mut Stack) -> OError;
-    let fns: [(&str, Fn, u32); 51] = [
+    let fns: [(&str, Fn, u32); 53] = [
         ("pop", pop, 0),
         ("dup", dup, 2),
         ("clone", clone, 1),
@@ -857,6 +885,8 @@ pub fn register(r: &mut Stack, o: Arc<Frame>) {
         ("bytes-to-str", bytes_to_str, 1),
         ("acopy", acopy, 1),
         ("throw", throw, 0),
+        ("write-sasm", write_sasm, 1),
+        ("write-file-sasm", write_file_sasm, 1),
     ];
     for f in fns {
         r.define_func(

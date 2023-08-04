@@ -62,6 +62,7 @@ fn read_block(str_words: &[String], isfn: bool) -> Result<(Option<u32>, Words, u
                     return Err(LexerError::FunctionBlockExpected);
                 }
             }
+            // lambda
             "{" => {
                 let block = read_block(&str_words[i..], true)?;
                 i += block.2;

@@ -133,6 +133,31 @@ construct _array-ext {
     }
 } include _array-ext in array
 
+construct _func-ext {
+    args
+    ;
+    call { | with this ; 
+        this:args null eq if {
+            0 anew this:=args
+        }
+        this:args:to-stack this call
+    }
+    add-args { this | with args this ;
+        this:args null eq if {
+            0 anew this:=args
+        }
+        [ this:args:to-stack args:to-stack ] this:=args
+        this
+    }
+    add-arg { this | with arg this ;
+        this:args null eq if {
+            0 anew this:=args
+        }
+        [ this:args:to-stack arg ] this:=args
+        this
+    }
+} include _func-ext in func
+
 "#iter.spl" import
 
 construct List {

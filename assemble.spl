@@ -1,0 +1,5 @@
+
+func main { mega | with args ;
+	2 args:get write-file-sasm println
+	0
+}
