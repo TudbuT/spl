@@ -4,10 +4,12 @@
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs,
     hash::{Hash, Hasher},
     io,
-    process::{Child, Command},
+    process::{Child, Command, Stdio},
 };
 
 use crate::{FuncImplType, Keyword, Word, Words};
@@ -18,6 +20,8 @@ mod splrs;
 pub struct RustApp {
     /// The path to the binary
     binary: String,
+    /// The path to the project dir
+    dir: String,
 }
 
 impl RustApp {
@@ -27,8 +31,17 @@ impl RustApp {
     }
 
     /// Executes the binary with some args
-    pub fn execute(&self, args: Vec<&str>) -> Result<Child, io::Error> {
+    pub fn execute<I, S>(&self, args: I) -> Result<Child, io::Error>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         Command::new(self.binary.clone()).args(args).spawn()
+    }
+
+    /// Deletes the binary and rust project
+    pub fn delete(self) {
+        fs::remove_dir_all(self.dir).expect("unable to delete RustApp");
     }
 }
 
@@ -99,7 +112,7 @@ impl RustAppBuilder {
     }
 
     /// Builds the desired app, including literally building it using cargo.
-    pub fn build(self) -> Result<RustApp, io::Error> {
+    pub fn build(self, output: bool) -> Result<RustApp, io::Error> {
         // we need a temp folder!
         let tmp = "."; // TODO replace?
         let name = match self.name {
@@ -115,16 +128,20 @@ impl RustAppBuilder {
             .arg("new")
             .arg(format!("spl-{name}"))
             .current_dir(tmp)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .unwrap()
-            .wait_with_output();
+            .wait();
         Command::new("cargo")
             .arg("add")
             .arg(format!("spl@{}", env!("CARGO_PKG_VERSION")))
             .current_dir(format!("{tmp}/spl-{name}"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .unwrap()
-            .wait_with_output()?;
+            .wait()?;
         let mut runtime_init = String::new();
         let mut code = String::new();
         for func in self.rust_functions.into_iter().enumerate() {
@@ -169,10 +186,21 @@ impl RustAppBuilder {
             .arg("build")
             .arg("--release")
             .current_dir(format!("{tmp}/spl-{name}"))
+            .stdout(if output {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            })
+            .stderr(if output {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            })
             .spawn()
             .unwrap()
-            .wait_with_output()?;
+            .wait()?;
         Ok(RustApp {
+            dir: format!("{tmp}/spl-{name}"),
             binary: {
                 // insanity. will have to clean this up at some point.
                 let dir = format!("{tmp}/spl-{name}/target/release/");

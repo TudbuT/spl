@@ -7,20 +7,38 @@ fn main() {
     let arg = &args
         .next()
         .unwrap_or_else(|| find_in_splpath("repl.spl").expect("no file to be run"));
-    if arg == "--build" {
+    if arg == "--build" || arg == "--run" {
         let file = args.next().unwrap();
         let data = fs::read_to_string(file.clone()).expect("unable to read specified file");
-        println!("Building SPL with specified natives file...");
-        let mut builder = RustAppBuilder::new();
-        if let Some(name) = args.next() {
-            builder.set_name(name);
+        let build_only = arg == "--build";
+        if build_only {
+            println!("Building SPL with specified natives file...");
         }
-        println!("Embedding source...");
-        builder.add_source(file, data.to_owned());
-        println!("Preparing rust code...");
+        let mut builder = RustAppBuilder::new();
+        if build_only {
+            if let Some(name) = args.next() {
+                builder.set_name(name);
+            }
+            println!("Embedding source...");
+        }
+        builder.add_source(file.to_owned(), data.to_owned());
+        if build_only {
+            println!("Preparing rust code...");
+        }
         builder.prepare(lex(data.to_owned()).expect("invalid SPL in natives file."));
-        println!("Building...");
-        println!("Built! Binary is {}", builder.build().unwrap().get_binary());
+        if build_only {
+            println!("Building...");
+        }
+        let app = builder.build(build_only).unwrap();
+        if build_only {
+            println!("Built! Binary is {}", app.get_binary());
+        } else {
+            let mut args: Vec<String> = args.collect();
+            args.insert(0, file);
+            app.execute(args).unwrap();
+            app.delete();
+        }
+
         return;
     }
     if let Err(x) = start_file(arg) {
