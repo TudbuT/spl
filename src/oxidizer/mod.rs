@@ -158,7 +158,7 @@ impl RustAppBuilder {
                     if let Err(x) = start_file(
                         &args()
                             .nth(1)
-                            .unwrap_or_else(|| find_in_splpath(default_file).expect("no file to be run")),
+                            .unwrap_or_else(|| find_in_splpath("default_file").expect("no file to be run")),
                     ) {
                         println!("{x:?}");
                     }
