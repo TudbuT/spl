@@ -173,7 +173,28 @@ impl RustAppBuilder {
             .unwrap()
             .wait_with_output()?;
         Ok(RustApp {
-            binary: format!("{tmp}/spl-{name}/target/release/spl-{name}"),
+            binary: {
+                // insanity. will have to clean this up at some point.
+                let dir = format!("{tmp}/spl-{name}/target/release/");
+                fs::read_dir(dir)
+                    .expect("unable to build: dir was not created.")
+                    .filter(|x| {
+                        let x = x
+                            .as_ref()
+                            .expect("file system did something i cannot comprehend");
+                        let n = x.file_name().into_string().unwrap();
+                        x.file_type().expect("file system uhhh?????").is_file()
+                            && !n.ends_with(".d")
+                            && !n.starts_with(".")
+                    })
+                    .next()
+                    .expect("cargo was unable to build the binary")
+                    .expect("file system did something i cannot comprehend")
+                    .path()
+                    .into_os_string()
+                    .into_string()
+                    .expect("bad unicode in file path")
+            },
         })
     }
 }
